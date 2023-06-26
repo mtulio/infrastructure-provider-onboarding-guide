@@ -102,7 +102,7 @@ The ["Load balancing requirements for user-provisioned infrastructure"](https://
 
 You can use the cloud provider's Load Balancer when it meets the requirements.
 
-Important nodes:
+Important notes:
 
 - the address `api-int.clusterDomain` must point to the internal Load Balancer address.
 - the Load Balancers must support hairpin connections
