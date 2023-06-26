@@ -170,7 +170,7 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: {{ cloud provider name }}-cloud-controller-manager # replace me
-  namespace: provider-cloud-controller-manager # replace me
+  namespace: {{ cloud provider name }}-cloud-controller-manager # replace me
   labels:
     k8s-app: {{ cloud provider name }}-cloud-controller-manager # replace me
     infrastructure.openshift.io/cloud-controller-manager: {{ cloud provider name }} # replace me
