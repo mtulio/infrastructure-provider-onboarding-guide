@@ -89,9 +89,9 @@ In production environments for the cloud provider is recommended to deploy OpenS
 
 ### DNS
 
-There is no specific configuration for the "External" platform type when in the DNS setup.
+There is no specific configuration for DNS when using platform `External`, the setup must follow the same as agnostic installation and the provider configuration.
 
-Please take a look at the following guides for setup DNS:
+Please take a look at the following guides to the DNS setup:
 
 - [User-provisioned DNS requirements](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html#installation-dns-user-infra_installing-platform-agnostic)
 - [Validating DNS resolution for user-provisioned infrastructure](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html#installation-user-provisioned-validating-dns_installing-platform-agnostic)
@@ -107,7 +107,7 @@ Important nodes:
 - the address `api-int.clusterDomain` must point to the internal Load Balancer address.
 - the Load Balancers must support hairpin connections
 
-## Prepare the installation
+## Preparing the installation
 
 The `External` platform type configuration is created in this section. The steps below describe how to create the `install-config.yaml` with the required fields, and the steps used to customize the providers' manifests before generating the deployment/ignition configuration/ignition.
 
@@ -160,8 +160,6 @@ In that stage, the Cloud Controller Manager (CCM) manifests must be created, as 
 
 The manifest below can be used as a Deployment configuration:
 
-> Q: @Adrien: can we use this deployment here? https://github.com/adriengentil/ccm-openshift-template/blob/main/template.yaml
-
 ```yaml
 # This a template that can be used as a base to run your own cluster controller manager in openshift, all you need is to:
 # - replace values between {{ and }} with your own ones
@@ -172,7 +170,7 @@ kind: Deployment
 apiVersion: apps/v1
 metadata:
   name: {{ cloud provider name }}-cloud-controller-manager # replace me
-  namespace: openshift-cloud-controller-manager
+  namespace: provider-cloud-controller-manager # replace me
   labels:
     k8s-app: {{ cloud provider name }}-cloud-controller-manager # replace me
     infrastructure.openshift.io/cloud-controller-manager: {{ cloud provider name }} # replace me
@@ -275,7 +273,7 @@ The example below shows how to create a `MachineConfig` to retrieve the provider
 ```yaml
 # https://github.com/openshift/machine-config-operator/blob/master/templates/common/aws/files/usr-local-bin-aws-kubelet-providerid.yaml
 variant: openshift
-version: 4.13.0
+version: 4.12.0
 metadata:
   name: 00-{{ machine_role }}-kubelet-providerid
   labels:
@@ -294,7 +292,7 @@ storage:
             exit 0
         fi
 
-        PROVIDERID=$(curl -sL http://169.254.169.254/opc/v2/instance/http://169.254.169.254/metadata/v1/id);
+        PROVIDERID=$(curl -sL http://169.254.169.254/metadata/id);
 
         cat > "${NODECONF}" <<EOF
         [Service]
@@ -306,7 +304,7 @@ systemd:
     enabled: true
     contents: |
       [Unit]
-      Description=Fetch kubelet provider id from AWS Metadata
+      Description=Fetch kubelet provider id from Metadata
       # Run afterburn service for collect info from metadata server
       # see: https://coreos.github.io/afterburn/usage/attributes/
       # Not required due to OCP 4.1 boot image does not contain afterburn service

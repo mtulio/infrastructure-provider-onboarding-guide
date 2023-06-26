@@ -30,4 +30,3 @@ nav:
     - platform-external/installing.md
     - Use Cases:
       - platform-external/use-case-oci-upi.md
-      - platform-external/use-case-oci-assisted.md
