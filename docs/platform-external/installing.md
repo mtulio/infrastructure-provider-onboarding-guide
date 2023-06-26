@@ -257,6 +257,28 @@ spec:
               - key: ca-bundle.crt
                 path: tls-ca-bundle.pem
         # add extra volumes if needed
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:cloud-controller-manager
+  labels:
+    kubernetes.io/cluster-service: "true"
+rules:
+  {{ define here the authorization rules required by your CCM }}
+---
+kind: ClusterRoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: oci-cloud-controller-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:cloud-controller-manager
+subjects:
+- kind: ServiceAccount
+  name: cloud-controller-manager
+  namespace: {{ cloud provider name }}-cloud-controller-manager
 ```
 
 
