@@ -19,12 +19,13 @@ Download the OpenShift CLI and installer:
 
 - Navigate to the release controller: https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/#4.14.0-0.nightly
 
-- Choose one version and extract the tools (clients):
+- Choose the release image name and extract the tools (clients):
 
 > The Platform External is available in releases 4.14+ created after 2023-06-23
 
 ```bash
-oc adm release extract -a ~/.openshift/pull-secret-latest.json --tools registry.ci.openshift.org/ocp/release:4.14.0-0.nightly-2023-06-26-004511
+export RELEASE=registry.ci.openshift.org/ocp/release:4.14.0-0.nightly-2023-06-26-004511
+oc adm release extract -a ~/.openshift/pull-secret-latest.json --tools $RELEASE
 ```
 
 #### OCI CLI
@@ -49,6 +50,10 @@ The OCI CLI is used in this guide to create resources in the Oracle Cloud Infras
 wget -O butane "https://github.com/coreos/butane/releases/download/v0.17.0/butane-x86_64-unknown-linux-gnu"
 
 ### Setup the Provider Account
+
+Oracle provides Compartments to aggregate resources. The compartments also can be used to apply policies of permissions for those resources.
+
+The Control Plane and Compute nodes Compartments are nested to allow fine granted permissions when allowing resources running in Control Plane to access the OCI APIs/resources.
 
 Create the Compartments:
 
@@ -126,6 +131,8 @@ Allow dynamic-group ocp-compute to manage load-balancers in compartment openshif
 
 Create the VCN and dependencies with the following configuration:
 
+> TODO/WIP
+
 | Resource | Value | Note |
 | -- | -- | -- |
 | VCN | CIDR 10.0.0.0/16 | |
@@ -137,6 +144,8 @@ Create the VCN and dependencies with the following configuration:
 Network Security Groups:
 
 - Control Planes
+
+> TODO/WIP
 
 | Rule Type | Source | DST Port | Note |
 | -- | -- | -- | -- |
@@ -172,11 +181,26 @@ Backend Sets (BSet)
 
 ### Create the install-config.yaml
 
-> TODO: the install-config.yaml must be adapted to set the `platform.external.*` when the PR in the `openshift-installer` is merged.
-
 Create the install-config.yaml setting the Platform Type as `None`:
 
+> TODO: the install-config.yaml must be adapted to set the `platform.external.*` when [the PR in the `openshift-installer`](https://github.com/openshift/installer/pull/7217) is merged.
+
 > The Infrastructure manifest will be temporarially patched to `External`, replacing the `None` type
+
+```bash
+# Change Me
+export INSTALL_DIR=./install-dir
+export CLUSTER_NAME=oci-ext00
+export BASE_DOMAIN=splat-oci.devcluster.openshift.com
+
+export SSH_PUB_KEY_FILE="${HOME}/.ssh/id_rsa.pub"
+export PULL_SECRET_FILE="${HOME}/.openshift/pull-secret-latest.json"
+
+# Create the install directory
+mkdir -p $INSTALL_DIR
+```
+
+Create the `install-config.yaml`:
 
 ```bash
 cat <<EOF > ${INSTALL_DIR}/install-config.yaml
@@ -202,7 +226,30 @@ EOF
 
 #### Patch Infrastructure Object
 
-> TODO
+- Create the patch object for Platform External:
+
+```bash
+cat <<EOF > patch_cluster-infrastructure-02-config.yml
+spec:
+  platformSpec:
+    external:
+      platformName: oci
+    type: External
+status:
+  platform: External
+  platformStatus:
+    type: External
+    external:
+      cloudControllerManager:
+        state: External
+EOF
+```
+
+- Apply the patch to the Infrastructure manifest
+
+```bash
+./yq eval-all -i '. * load("patch_cluster-infrastructure-02-config.yml")' $INSTALL_DIR/manifests/cluster-infrastructure-02-config.yml
+```
 
 #### Create manifests for CCM
 
@@ -211,7 +258,7 @@ EOF
 > TODO: explain why we don't advice to create components in namespaces `kube-*` or `openshift-*`
 
 ```bash
-export OCI_CCM_NAMESPACE=oci-ccm
+export OCI_CCM_NAMESPACE=oci-cloud-controller-manager
 
 cat <<EOF > ${INSTALL_DIR}/manifests/oci-00-namespace.yaml
 apiVersion: v1
@@ -232,10 +279,8 @@ EOF
 
 ```bash
 # Change Me:
-export CLUSTER_NAME=ChangeMe
-export BASE_DOMAIN=ChangeMe
 export OCI_CONFIG_CLUSTER_REGION=us-sanjose-1
-export OCI_CCM_COMPARTMENT_ID=ChangeMe
+export OCI_CCM_COMPARTMENT_ID=<ChangeMe:openshift compartment>
 export OCI_VCN_ID=ChangeMe
 export OCI_LB_SUBNET_ID=ChangeMe
 
@@ -271,7 +316,7 @@ EOF2
 EOF1
 ```
 
-- Download manifests from Github and save it in the directory `${INSTALL_DIR}/manifests`
+- Download manifests from [OCI CCM's Github](https://github.com/oracle/oci-cloud-controller-manager) and save it in the directory `${INSTALL_DIR}/manifests`:
 
 ```bash
 export RELEASE=v1.25.0
@@ -287,13 +332,10 @@ wget  https://github.com/oracle/oci-cloud-controller-manager/releases/download/$
 ./yq ". | select(.kind==\"ServiceAccount\").metadata.namespace=\"$OCI_CCM_NAMESPACE\"" oci-cloud-controller-manager-rbac.yaml > ${INSTALL_DIR}/manifests/oci-01-ccm-01-rbac.yaml
 ```
 
-- Patch the DaemonSet setting the namespace, append the tolerations, mount CA, and add env vars for the kube URL for OpenShift
-
-> `yq` is required to patch the manifests
-
-> https://mikefarah.gitbook.io/yq/operators/multiply-merge
+- Patch the CCM DaemonSet manifest setting the namespace, append the tolerations, mount CA, and add env vars for the kube API URL used in OpenShift:
 
 ```bash
+# Create the pod template patch
 cat <<EOF > ./patch1_oci-cloud-controller-manager.yaml
 metadata:
   namespace: $OCI_CCM_NAMESPACE
@@ -315,6 +357,7 @@ spec:
                 path: tls-ca-bundle.pem
 EOF
 
+# Create the containers' patch (TODO merge both patches)
 cat <<EOF > ./patch2_oci-cloud-controller-manager.yaml
 spec:
   template:
@@ -353,10 +396,10 @@ EOF
 ./yq eval-all '.spec.template.spec.containers[] *= load("patched2_oci-cloud-controller-manager.yaml")' patched1_oci-cloud-controller-manager.yaml  > ${INSTALL_DIR}/manifests/oci-01-ccm-02-daemonset.yaml
 ```
 
-The following files must be created to install CCM:
+The following CCM manifests files must be created in the installation `manifests/` directory:
 
 ```bash
-$ tree $INSTALL_DIR/manifests/oci-*
+$ tree $INSTALL_DIR/manifests/
 install-dir/manifests/
 ├── oci-00-namespace.yaml
 ├── oci-01-ccm-00-secret.yaml
@@ -373,7 +416,7 @@ The Provider ID must be set dynamically for each node. The steps below describes
 - Create the butane file
 
 ```bash
-function create_mc_kubelet() {
+function create_machineconfig_kubelet() {
     local node_role=$1
     cat << EOF > ./mc-kubelet-$node_role.bu
 # Butane file to setup kubelet for node role $node_role
@@ -424,8 +467,8 @@ systemd:
 EOF
 }
 
-create_mc_kubelet "master"
-create_mc_kubelet "worker"
+create_machineconfig_kubelet "master"
+create_machineconfig_kubelet "worker"
 ```
 
 - Process the butane files:
