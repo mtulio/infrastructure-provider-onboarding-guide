@@ -1,4 +1,4 @@
-# Use case of installing a cluster with platform external type in on Oracle Cloud Infrastructure
+# Use case of installing a cluster with platform external type in OCI
 
 !!! note "Goal"
     Describe the steps to install an OCP cluster using UPI in OCI, detailing the customization options to setup external platform type.
@@ -54,12 +54,9 @@ Table of Contents
 
 Download the OpenShift CLI and installer:
 
-- [Navigate to the release controller](https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/#4.14.0-0.nightly)
+- [Navigate to the release controller](https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/#4-dev-preview)
 
 - Choose the release image name and extract the tools (clients):
-
-!!! warning "Supported Versions"
-    The Platform External is available in releases 4.14+ created after 2023-06-23.
 
 !!! tip "Credentials"
     The Red Hat developer credential is required to pull from OpenShift CI repository `registry.ci.openshift.org`.
@@ -68,8 +65,13 @@ Download the OpenShift CLI and installer:
 
     Alternatively you can provide the option `-a /path/to/pull-secret.json`.
 
+!!! warning "Available Releases"
+    The Platform External is available in releases 4.14+ created after dev preview release 4.14.0-ec.3.
+
 ```sh
-oc adm release extract --tools registry.ci.openshift.org/ocp/release:4.14.0-0.nightly-2023-06-27-000502
+export OCP_RELEASE=quay.io/openshift-release-dev/ocp-release:4.14.0-ec.3-x86_64
+export OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=$OCP_RELEASE
+oc adm release extract --tools $OCP_RELEASE
 ```
 
 Extract the tarbal files:
@@ -158,23 +160,28 @@ COMPARTMENT_ID_OPENSHIFT=$(oci iam compartment list --name openshift \
 - Create `openshift/controlplane` compartment and export the variable `COMPARTMENT_ID_OPENSHIFT_CPL`:
 
 ```bash
-oci iam compartment create --name "controlplane" \
-    --compartment-id "$COMPARTMENT_ID_OPENSHIFT" \
-    --description "openshift compartment for control plane nodes"
+# TODO/tmp: Move back to nested compartment after troubleshooting install issues (CCM access to APIs)
+# oci iam compartment create --name "controlplane" \
+#     --compartment-id "$COMPARTMENT_ID_OPENSHIFT" \
+#     --description "openshift compartment for control plane nodes"
 
-COMPARTMENT_ID_OPENSHIFT_CPL=$(oci iam compartment list --name controlplane \
-    --compartment-id "$COMPARTMENT_ID_OPENSHIFT" | jq -r '.data[0].id')
+# COMPARTMENT_ID_OPENSHIFT_CPL=$(oci iam compartment list --name controlplane \
+#    --compartment-id "$COMPARTMENT_ID_OPENSHIFT" | jq -r '.data[0].id')
+
+COMPARTMENT_ID_OPENSHIFT_CPL=$COMPARTMENT_ID_OPENSHIFT
 ```
 
 - Create `openshift/compute` compartment and export the variable `COMPARTMENT_ID_OPENSHIFT_CMP`:
 
 ```bash
-oci iam compartment create --name "compute" \
-    --compartment-id "$COMPARTMENT_ID_OPENSHIFT" \
-    --description "openshift compartment for control plane nodes"
+# oci iam compartment create --name "compute" \
+#     --compartment-id "$COMPARTMENT_ID_OPENSHIFT" \
+#     --description "openshift compartment for control plane nodes"
 
-COMPARTMENT_ID_OPENSHIFT_CMP=$(oci iam compartment list --name compute \
-    --compartment-id "$COMPARTMENT_ID_OPENSHIFT" | jq -r '.data[0].id')
+# COMPARTMENT_ID_OPENSHIFT_CMP=$(oci iam compartment list --name compute \
+#     --compartment-id "$COMPARTMENT_ID_OPENSHIFT" | jq -r '.data[0].id')
+
+COMPARTMENT_ID_OPENSHIFT_CMP=$COMPARTMENT_ID_OPENSHIFT
 ```
 
 ### Upload the RHCOS image
@@ -268,14 +275,56 @@ oci iam policy create --name openshift-oci-cloud-controller-manager \
 
 ### Network
 
+>> WIP
+
+<!--
+> Temporary steps to create OCI network infra (VCN*, DNS and Load Balancers) to test the platform External feature. Note: this automation is not a goal for this document, I'll keep the step commented until WIP is able to test the doc, without focusing on the infra sections. I will check how to improve those sections later, maybe only providing references to the product docs - but considering those steps require effort for the user, we could point to some automation (maybe our CI tests?).
+
+```
+# -1) removing existing project/cluster setup: rm -rf ~/.ansible/okd-installer/clusters/$CLUSTER_NAME/
+# 0) Install ansible dependencies: https://ansible-collection-okd-installer-csfcfiew8-mtulio.vercel.app/guides/OCI/oci-prerequisites/
+# 1) Create the $VARS_FILE :
+CLUSTER_NAME=oci-ext00
+VARS_FILE=./vars-oci-ha_${CLUSTER_NAME}.yaml
+BASE_DOMAIN="splat-oci.devcluster.openshift.com"
+SSH_PUB_KEY_FILE="$HOME/.ssh/openshift-dev.pub"
+OCI_CONFIG_CLUSTER_REGION=us-sanjose-1
+OCI_COMPARTMENT_ID_DNS="${COMPARTMENT_ID_SPLAT}"
+COMPARTMENT_ID_OPENSHIFT="${COMPARTMENT_ID_OPENSHIFT}"
+
+# https://ansible-collection-okd-installer-csfcfiew8-mtulio.vercel.app/guides/OCI/oci-install-ccm/
+cat <<EOF > ${VARS_FILE}
+provider: oci
+cluster_name: ${CLUSTER_NAME}
+config_cluster_region: ${OCI_CONFIG_CLUSTER_REGION}
+config_featureset: TechPreviewNoUpgrade
+oci_compartment_id: ${COMPARTMENT_ID_OPENSHIFT}
+oci_compartment_id_dns: ${OCI_COMPARTMENT_ID_DNS}
+oci_compartment_id_image: "ocid1.compartment.oc1..aaaaaaaaovt4qpeqi7l4cfefzh7tnggbmbj26ccb3dmv23jwle3gsusqpkjq"
+cluster_profile: ha
+config_base_domain: $BASE_DOMAIN
+config_ssh_key: "$(cat ${SSH_PUB_KEY_FILE})"
+config_pull_secret_file: "${PULL_SECRET_FILE}"
+release_image: quay.io/openshift-release-dev/ocp-release
+release_version: 4.14.0-ec.3
+EOF
+
+# 3) Create install-config.yaml manually (Section 2/#Create install-config.yaml)
+# 4) Load project and create the infrastructure stacks (network, DNS and load balancers) running:
+ansible-playbook mtulio.okd_installer.install_clients -e @$VARS_FILE
+ansible-playbook mtulio.okd_installer.config -e mode=create-manifests -e @$VARS_FILE
+ansible-playbook mtulio.okd_installer.stack_network -e @$VARS_FILE
+ansible-playbook mtulio.okd_installer.stack_dns -e @$VARS_FILE
+ansible-playbook mtulio.okd_installer.stack_loadbalancer -e @$VARS_FILE
+```
+ -->
+
 The provider network must be created using the [Networking requirements for user-provisioned infrastructure](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html#installation-network-user-infra_installing-platform-agnostic).
 
 !!! tip "Info"
     The resource name provided in this guide is not standard, but follows a similar naming convention created by installer in supported cloud providers. The names will also be used in future sections to discover resources.
 
 Create the VCN and dependencies with the following configuration:
-
-> TODO/WIP
 
 | Resource | Name | Attributes | Note |
 | -- | -- | -- | -- |
@@ -290,21 +339,9 @@ Create the VCN and dependencies with the following configuration:
 | Nat GW | | -- | |
 | ... | ... | ... | ... |
 
-<!--
-> Temporary steps to create OCI network infra to test the platform External Patch. Note: this automation is not a goal for this document, we'll keep the steps commented until understand how to present that platform-specific steps later:
-
-```
-# Create install-config (Section 2), then run:
-ansible-playbook mtulio.okd_installer.install_clients -e @$VARS_FILE
-ansible-playbook mtulio.okd_installer.config -e mode=create-manifests -e @$VARS_FILE
-
-ansible-playbook mtulio.okd_installer.stack_network -e @$VARS_FILE
-ansible-playbook mtulio.okd_installer.stack_dns -e @$VARS_FILE
-ansible-playbook mtulio.okd_installer.stack_loadbalancer -e @$VARS_FILE
-```
- -->
-
 ### DNS
+
+>> WIP
 
 !!! tip "Helper"
     It's not required to have a public accessible API and DNS domain, but it will allow to access the cluster without needing to keep a bastion host.
@@ -318,6 +355,8 @@ DNS records for an API accessed from the internet:
 | `${CLUSTER_NAME}`.`${BASE_DOMAIN}` | *.apps | Public IP Address or DNS for the Load Balancer |
 
 ### Load Balancer
+
+>> WIP
 
 - Create the Network Load Balancer with name `${CLUSTER_NAME}-nlb`:
 
@@ -341,16 +380,11 @@ Listeners:
 
 ## Section 2. Preparing the installation
 
+This section describes how to setup the OpenShift customizing the manifests used in the installation.
 
-### Create install-config.yaml
+### Create the installer configuration
 
-Create the `install-config.yaml` setting the Platform type to `None`:
-
-!!! danger "WIP Note"
-    The `install-config.yaml` must be adapted to set the `platform.external.*` when [the PR in the `openshift-installer`](https://github.com/openshift/installer/pull/7217) is merged.
-
-    The Infrastructure manifest will be temporarially patched to `External`, replacing the `None` type
-
+Modify and export the variables used to build the `install-config.yaml` and the later steps:
 
 ```bash
 # Change Me
@@ -358,6 +392,7 @@ export CLUSTER_NAME=oci-ext00
 export BASE_DOMAIN=splat-oci.devcluster.openshift.com
 
 #export INSTALL_DIR=./install-dir
+#> tmp path while using automation to create infra stacks (network, dns and LB)
 export INSTALL_DIR=${HOME}/.ansible/okd-installer/clusters/${CLUSTER_NAME}/
 
 export SSH_PUB_KEY_FILE="${HOME}/.ssh/id_rsa.pub"
@@ -367,16 +402,60 @@ export PULL_SECRET_FILE="${HOME}/.openshift/pull-secret-latest.json"
 mkdir -p $INSTALL_DIR
 ```
 
+<!--
+#### (TEMP) Create install-config.yaml
+
+Create the `install-config.yaml` setting the Platform type to `None`:
+
+!!! danger "WIP Note"
+    The `install-config.yaml` must be adapted to set the `platform.external.*` when [the PR in the `openshift-installer`](https://github.com/openshift/installer/pull/7217) is merged.
+
+    The Infrastructure manifest will be temporarially patched to `External`, replacing the `None` type
+
 Create the `install-config.yaml`:
+
+!!! warning "FeatureSet"
+    The `featureSet` option must be `TechPreviewNoUpgrade` until platform external type is GA.
 
 ```bash
 cat <<EOF > ${INSTALL_DIR}/install-config.yaml
 apiVersion: v1
+featureSet: TechPreviewNoUpgrade
 baseDomain: ${BASE_DOMAIN}
 metadata:
   name: "${CLUSTER_NAME}"
 platform:
   none: {}
+publish: External
+pullSecret: >
+  $(cat ${PULL_SECRET_FILE})
+sshKey: >
+  $(cat ${SSH_PUB_KEY_FILE})
+EOF
+```
+
+-->
+
+#### Create install-config.yaml
+
+!!! danger "WIP Note"
+    This is the final version after [the PR in the `openshift-installer`](https://github.com/openshift/installer/pull/7217) is merged.
+
+Create the `install-config.yaml` setting the Platform type to `External`:
+
+!!! warning "FeatureSet"
+    The `featureSet` option must be `TechPreviewNoUpgrade` until platform external type is GA.
+
+```bash
+cat <<EOF > ${INSTALL_DIR}/install-config.yaml
+apiVersion: v1
+featureSet: TechPreviewNoUpgrade
+baseDomain: ${BASE_DOMAIN}
+metadata:
+  name: "${CLUSTER_NAME}"
+platform:
+  external:
+    platformName: oci
 publish: External
 pullSecret: >
   $(cat ${PULL_SECRET_FILE})
@@ -391,7 +470,9 @@ EOF
 ./openshift-install create manifests --dir $INSTALL_DIR
 ```
 
-#### Patch Infrastructure Object
+<!--
+
+#### (TEMP) Patch Infrastructure Object
 
 !!! danger "WIP Note"
     This steps must be removed when [the PR in the `openshift-installer`](https://github.com/openshift/installer/pull/7217) will be merged.
@@ -420,15 +501,19 @@ EOF
 ```bash
 ./yq eval-all -i '. * load("patch_cluster-infrastructure-02-config.yml")' $INSTALL_DIR/manifests/cluster-infrastructure-02-config.yml
 ```
+-->
 
-#### Create manifests for CCM
+#### Create manifests for OCI Cloud Controller Manager
 
 The steps in this section describes how to customize the OpenShift installation providing the Cloud Controller Manager manifests to be added in the bootstrap process.
+
+!!! warning "Info"
+    This guide is based in the OCI CCM v1.25.0. You must read the [project documentation](https://github.com/oracle/oci-cloud-controller-manager) for more information.
 
 - Create the namespace manifest:
 
 !!! danger "Important"
-    Red Hat does not recommend to create resources in namespaces prefixed with `kube-*` and `openshift-*`. The custom namespace manifest must be created, then deployment manifests must be adapted to used the custom namespace.
+    Is not recommended to create resources in namespaces prefixed with `kube-*` and `openshift-*`. The custom namespace manifest must be created, then deployment manifests must be adapted to used the custom namespace.
 
     See [the documentation](https://docs.openshift.com/container-platform/4.13/applications/projects/working-with-projects.html) for more information.
 
@@ -440,6 +525,9 @@ apiVersion: v1
 kind: Namespace
 metadata:
   name: $OCI_CCM_NAMESPACE
+  annotations:
+    workload.openshift.io/allowed: management
+    include.release.openshift.io/self-managed-high-availability: "true"
   labels:
     "pod-security.kubernetes.io/enforce": "privileged"
     "pod-security.kubernetes.io/audit": "privileged"
@@ -461,21 +549,13 @@ EOF
 export OCI_CONFIG_CLUSTER_REGION=us-sanjose-1
 export OCI_CCM_COMPARTMENT_ID=$COMPARTMENT_ID_OPENSHIFT
 
-## simple VCN ID discovery (considering one by compartment)
+## Discover VCN ID (considering in the compartment)
 export OCI_VCN_ID=$(oci network vcn list --compartment-id $OCI_CCM_COMPARTMENT_ID | jq -r .data[0].id)
-## simple Subnet ID discovery (using public for LB [named ending with public], considering two global subnets by VCN)
+## Discover public Subnet ID (using public for LB [named ending with public], considering two global subnets by VCN)
 export OCI_LB_SUBNET_ID=$(oci network subnet list --compartment-id $OCI_CCM_COMPARTMENT_ID | jq -r '.data[] | select(.["display-name"] | endswith("public")).id')
 
-# Create the secret manifest
-cat <<EOF1 > ${INSTALL_DIR}/manifests/oci-01-ccm-00-secret.yaml
----
-apiVersion: v1
-kind: Secret
-metadata:
-  name: oci-cloud-controller-manager
-  namespace: $OCI_CCM_NAMESPACE
-data:
-  cloud-provider.yaml: $(cat <<EOF2 | base64 -w0
+# Creating the file and duplicating it in the secret to prevent CCM Error in the logs.
+cat <<EOF > ./cloud-provider.yaml
 auth:
   region: $OCI_CONFIG_CLUSTER_REGION
   useInstancePrincipals: true
@@ -493,10 +573,28 @@ rateLimiter:
   rateLimitBucketRead: 5
   rateLimitQPSWrite: 20.0
   rateLimitBucketWrite: 5
-EOF2
-)
+EOF
+
+# Create the secret manifest
+cat <<EOF1 > ${INSTALL_DIR}/manifests/oci-01-ccm-00-secret.yaml
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oci-cloud-controller-manager
+  namespace: $OCI_CCM_NAMESPACE
+data:
+  cloud-provider.yaml: $(base64 -w0 < ./cloud-provider.yaml)
 EOF1
 ```
+
+<!-- !!! danger "Bug"
+    The CCM is raising the error below in the startup/logs. The secret data `config.yaml` has been duplicated to prevent this error.
+
+    ```
+    ERROR   oci/ccm.go:122  Metrics collection could not be enabled {"component": "cloud-controller-manager", "error": "failed to load configuration file at path /etc/oci/config.yaml: open /etc/oci/config.yaml: no such file or directory"
+    ``` -->
+
 
 !!! warning "Question"
     - Is it possible to use NSG instead of SecList in Load Balancer?
@@ -504,24 +602,45 @@ EOF1
 - Download manifests from [OCI CCM's Github](https://github.com/oracle/oci-cloud-controller-manager) and save it in the directory `${INSTALL_DIR}/manifests`:
 
 ```bash
-export RELEASE=v1.25.0
+export CCM_RELEASE=v1.25.0
 
-wget https://github.com/oracle/oci-cloud-controller-manager/releases/download/${RELEASE}/oci-cloud-controller-manager-rbac.yaml -O oci-cloud-controller-manager-rbac.yaml
+wget https://github.com/oracle/oci-cloud-controller-manager/releases/download/${CCM_RELEASE}/oci-cloud-controller-manager-rbac.yaml -O oci-cloud-controller-manager-rbac.yaml
 
-wget  https://github.com/oracle/oci-cloud-controller-manager/releases/download/${RELEASE}/oci-cloud-controller-manager.yaml -O oci-cloud-controller-manager.yaml
+wget  https://github.com/oracle/oci-cloud-controller-manager/releases/download/${CCM_RELEASE}/oci-cloud-controller-manager.yaml -O oci-cloud-controller-manager.yaml
 ```
 
-- Patch the RBAC file setting the correct namespace
+- Patch the RBAC file setting the correct namespace in the `ServiceAccount`:
 
 ```bash
-./yq ". | select(.kind==\"ServiceAccount\").metadata.namespace=\"$OCI_CCM_NAMESPACE\"" oci-cloud-controller-manager-rbac.yaml > ${INSTALL_DIR}/manifests/oci-01-ccm-01-rbac.yaml
+./yq ". | select(.kind==\"ServiceAccount\").metadata.namespace=\"$OCI_CCM_NAMESPACE\"" oci-cloud-controller-manager-rbac.yaml > ./oci-cloud-controller-manager-rbac_patched.yaml
+```
+
+- Patch the RBAC file setting the correct namespace in the `ServiceAccount`:
+
+```bash
+cat << EOF > ./oci-ccm-rbac_patch_crb-subject.yaml
+- kind: ServiceAccount
+  name: cloud-controller-manager
+  namespace: $OCI_CCM_NAMESPACE
+EOF
+
+./yq eval-all -i ". | select(.kind==\"ClusterRoleBinding\").subjects *= load(\"oci-ccm-rbac_patch_crb-subject.yaml\")" ./oci-cloud-controller-manager-rbac_patched.yaml
+```
+
+- Split the RBAC manifest file
+
+>> debug/investigation the manifest render errors on bootstrap stage
+
+```bash
+./yq -s '"./oci-01-ccm-01-rbac_" + $index' ./oci-cloud-controller-manager-rbac_patched.yaml &&\
+mv -v ./oci-01-ccm-01-rbac_*.yml ${INSTALL_DIR}/manifests/
 ```
 
 - Patch the CCM DaemonSet manifest setting the namespace, append the tolerations, mount CA, and add env vars for the kube API URL used in OpenShift:
 
 ```bash
 # Create the pod template patch
-cat <<EOF > ./patch1_oci-cloud-controller-manager.yaml
+cat <<EOF > ./oci-cloud-controller-manager-ds_patch1.yaml
 metadata:
   namespace: $OCI_CCM_NAMESPACE
 spec:
@@ -531,28 +650,15 @@ spec:
         - key: node.kubernetes.io/not-ready
           operator: Exists
           effect: NoSchedule
-        - key: CriticalAddonsOnly
-          operator: Exists
-      volumes:
-        - name: trusted-ca
-          configMap:
-            name: ccm-trusted-ca
-            items:
-              - key: ca-bundle.crt
-                path: tls-ca-bundle.pem
 EOF
 
 # Create the containers' patch (TODO merge both patches)
-cat <<EOF > ./patch2_oci-cloud-controller-manager.yaml
+cat <<EOF > ./oci-cloud-controller-manager-ds_patch2.yaml
 spec:
   template:
     spec:
       containers:
-        - volumeMounts:
-            - name: trusted-ca
-              mountPath: /etc/pki/ca-trust/extracted/pem
-              readOnly: true
-          env:
+        - env:
           - name: KUBERNETES_PORT
             value: "tcp://api-int.$CLUSTER_NAME.$BASE_DOMAIN:6443"
           - name: KUBERNETES_PORT_443_TCP
@@ -572,24 +678,27 @@ spec:
 EOF
 
 # Merge required objects for pod template
-./yq eval-all '. as $item ireduce ({}; . *+ $item)' oci-cloud-controller-manager.yaml patch1_oci-cloud-controller-manager.yaml > patched1_oci-cloud-controller-manager.yaml
+./yq eval-all '. as $item ireduce ({}; . *+ $item)' oci-cloud-controller-manager.yaml oci-cloud-controller-manager-ds_patch1.yaml > oci-cloud-controller-manager-ds_patched1.yaml
 
 # Merge required objects for containers
-./yq eval-all '.spec.template.spec.containers[] as $item ireduce ({}; . *+ $item)' patched1_oci-cloud-controller-manager.yaml patch2_oci-cloud-controller-manager.yaml > patched2_oci-cloud-controller-manager.yaml
+./yq eval-all '.spec.template.spec.containers[] as $item ireduce ({}; . *+ $item)' oci-cloud-controller-manager-ds_patched1.yaml ./oci-cloud-controller-manager-ds_patch2.yaml > ./oci-cloud-controller-manager-ds_patched2.yaml
 
 # merge patched files
-./yq eval-all '.spec.template.spec.containers[] *= load("patched2_oci-cloud-controller-manager.yaml")' patched1_oci-cloud-controller-manager.yaml  > ${INSTALL_DIR}/manifests/oci-01-ccm-02-daemonset.yaml
+./yq eval-all '.spec.template.spec.containers[] *= load("./oci-cloud-controller-manager-ds_patched2.yaml")' oci-cloud-controller-manager-ds_patched1.yaml > ${INSTALL_DIR}/manifests/oci-01-ccm-02-daemonset.yaml
 ```
 
 The following CCM manifests files must be created in the installation `manifests/` directory:
 
 ```bash
 $ tree $INSTALL_DIR/manifests/
-install-dir/manifests/
+[...]
 ├── oci-00-namespace.yaml
 ├── oci-01-ccm-00-secret.yaml
-├── oci-01-ccm-01-rbac.yaml
-└── oci-01-ccm-02-daemonset.yaml
+├── oci-01-ccm-01-rbac_0.yml
+├── oci-01-ccm-01-rbac_1.yml
+├── oci-01-ccm-01-rbac_2.yml
+├── oci-01-ccm-02-daemonset.yaml
+[...]
 ```
 
 #### Create custom manifests for Kubelet
@@ -716,7 +825,7 @@ USER_DATA_URL=$(oci os preauth-request create --name bootstrap-${CLUSTER_NAME} \
     OCI CLI documentation for [`oci os preauth-request create`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.0/oci_cli_docs/cmdref/os/preauth-request/create.html)
 
 !!! warning "Attention"
-    Bucket Object URL must expires in one hour, if you are planning to create the bootstrap later, please adjust it.
+    Bucket Object URL will expires in one hour, if you are planning to create the bootstrap later, please adjust it.
 
     The certificates expires in 24 hours after the ignition files have been created, consider regenerating it if the ignitions are older than that.
 
@@ -779,7 +888,7 @@ oci compute instance launch \
     --source-details "{\"bootVolumeSizeInGBs\":120,\"bootVolumeVpusPerGB\":60,\"imageId\":\"${IMAGE_ID}\",\"sourceType\":\"image\"}" \
     --agent-config '{"areAllPluginsDisabled": true}' \
     --assign-public-ip True \
-    --user-data-file "./user-data-bootstrap.json" \
+    --user-data-file "./user-data-bootstrap.json"
 ```
 
 !!! tip "Helper"
@@ -789,7 +898,8 @@ oci compute instance launch \
 
     OCI CLI documentation for [`oci compute shape list`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/compute/shape/list.html)
 
-- Add the bootstrap to the Load Balancer's backend sets API and MCS[Machine Config Server]
+
+- Discover the Load Balancer and Bootstrap IDs:
 
 ```bash
 NLB_ID=$(oci nlb network-load-balancer list --compartment-id $COMPARTMENT_ID_OPENSHIFT | jq -r ".data.items[] | select(.[\"display-name\"] | startswith(\"$CLUSTER_NAME\")).id")
@@ -798,6 +908,11 @@ BES_MCS_NAME=$(oci nlb backend-set list --network-load-balancer-id $NLB_ID | jq 
 
 INSTANCE_ID_BOOTSTRAP=$(oci compute instance list  -c $COMPARTMENT_ID_OPENSHIFT_CPL | jq -r '.data[] | select((.["display-name"]=="bootstrap") and (.["lifecycle-state"]=="RUNNING")).id')
 
+test -z $INSTANCE_ID_BOOTSTRAP && echo "ERR: Bootstrap Instance ID not found=[$INSTANCE_ID_BOOTSTRAP]. Try again."
+```
+
+- Add the bootstrap to the Load Balancer's backend set API
+```bash
 # oci nlb backend-set update --generate-param-json-input backends
 cat <<EOF > ./nlb-bset-backends-api.json
 [
@@ -812,6 +927,19 @@ cat <<EOF > ./nlb-bset-backends-api.json
 ]
 EOF
 
+# Update API Backend Set
+oci nlb backend-set update \
+--backend-set-name $BES_API_NAME \
+--network-load-balancer-id $NLB_ID \
+--backends file://nlb-bset-backends-api.json
+```
+
+- Add the bootstrap to the Load Balancer's backend set MCS[Machine Config Server]:
+
+!!! warning "Wait"
+    You must wait a while for the Load Balancer to update before proceeding a new change.
+
+```bash
 cat <<EOF > ./nlb-bset-backends-mcs.json
 [
   {
@@ -824,12 +952,6 @@ cat <<EOF > ./nlb-bset-backends-mcs.json
   }
 ]
 EOF
-
-# Update API Backend Set
-oci nlb backend-set update \
---backend-set-name $BES_API_NAME \
---network-load-balancer-id $NLB_ID \
---backends file://nlb-bset-backends-api.json
 
 # Update MCS Backend Set
 oci nlb backend-set update \
