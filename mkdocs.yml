@@ -6,6 +6,11 @@ theme:
   highlightjs: true
   hljs_languages:
     - yaml
+
+markdown_extensions:
+  # To provide Note blocks (note, tip, warning)
+  - admonition
+
 nav:
   - Welcome: index.md
   - Full integration:
@@ -28,5 +33,4 @@ nav:
   - Platform External:
     - platform-external/index.md
     - platform-external/installing.md
-    - Use Cases:
-      - platform-external/use-case-oci-upi.md
+    - Use case of installing a cluster with platform external type in OCI: platform-external/use-case-oci-upi.md

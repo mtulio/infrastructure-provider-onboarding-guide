@@ -1,20 +1,33 @@
 # Use case of installing a cluster with platform external type in OCI
 
+> NOTE: almost ready for review in the content (description/topics).
+> The technical (commands) is in progress.
+
 !!! note "Goal"
-    Describe the steps to install an OCP cluster using UPI in OCI, detailing the customization options to setup external platform type.
+    Describe the steps to install an OCP cluster using UPI in OCI, detailing
+    the customization options to setup external platform type.
 
-This guide provides details of how to setup an OpenShift cluster using external platform type in Oracle Cloud Infrastructure (OCI).
+This guide provides details of how to setup an OpenShift cluster using external
+platform type in Oracle Cloud Infrastructure (OCI).
 
-The installation method used in this guide for external platform type is User-Provided Infrastructure (UPI). The steps provide low-level details to customize the provider's components like Cloud Controller Manager (CCM).
+The installation method used in this guide for external platform type is
+User-Provided Infrastructure (UPI). The steps provide low-level details to
+customize the provider's components like Cloud Controller Manager (CCM).
 
 !!! tip "Automation options"
-    The goal of this document is to provide details of platform external type, without focus in the automation of required infrastructure. The tool used to provisioning the resources described in this guide is the OCI CLI.
+    The goal of this document is to provide details of platform external type,
+    without focus in the automation of required infrastructure. The tool used to
+    provisioning the resources described in this guide is the OCI CLI.
 
-    Alternatively the automation can be done using official [Ansible](https://docs.oracle.com/en-us/iaas/tools/oci-ansible-collection/4.25.0/index.html) or [Terraform](https://registry.terraform.io/providers/oracle/oci/latest/docs) modules to achieve the same goal.
-
+    Alternatively the automation can be done using official
+    [Ansible](https://docs.oracle.com/en-us/iaas/tools/oci-ansible-collection/4.25.0/index.html)
+    or [Terraform](https://registry.terraform.io/providers/oracle/oci/latest/docs)
+    modules to achieve the same goal.
 
 !!! danger "Unsupported Document"
-    This guide is created only for Red Hat partners or providers willing to integrate its component in OpenShift, and should not be used as an official or supported OpenShift installation method.
+    This guide is created only for Red Hat partners or providers willing to integrate
+    its component in OpenShift, and should not be used as an official or supported
+    OpenShift installation method.
 
     Please look at the product documentation to get the supported path.
 
@@ -59,17 +72,20 @@ Download the OpenShift CLI and installer:
 - Choose the release image name and extract the tools (clients):
 
 !!! tip "Credentials"
-    The Red Hat developer credential is required to pull from OpenShift CI repository `registry.ci.openshift.org`.
+    The Red Hat developer credential is required to pull from OpenShift CI
+    repository `registry.ci.openshift.org`.
 
-    The [Red Hat Cloud credential (Pull secret)](https://console.redhat.com/openshift/install/metal/agent-based) is required to pull from the repository `quay.io/openshift-release-dev/ocp-release`.
+    The [Red Hat Cloud credential (Pull secret)](https://console.redhat.com/openshift/install/metal/agent-based)
+    is required to pull from the repository `quay.io/openshift-release-dev/ocp-release`.
 
     Alternatively you can provide the option `-a /path/to/pull-secret.json`.
 
 !!! warning "Available Releases"
-    The Platform External is available in releases 4.14+ created after dev preview release 4.14.0-ec.3.
+    The Platform External is available in releases 4.14+ created after dev
+    preview release 4.14.0-ec.4.
 
 ```sh
-export OCP_RELEASE=quay.io/openshift-release-dev/ocp-release:4.14.0-ec.3-x86_64
+export OCP_RELEASE=quay.io/openshift-release-dev/ocp-release:4.14.0-ec.4-x86_64
 export OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=$OCP_RELEASE
 oc adm release extract --tools $OCP_RELEASE
 ```
@@ -115,7 +131,8 @@ wget -O butane "https://github.com/coreos/butane/releases/download/v0.17.0/butan
 
 ### Setup the Provider Account
 
-Oracle provides Compartments to aggregate resources. The compartments also can be used to apply policies of permissions for those resources.
+Oracle provides Compartments to aggregate resources. The compartments also
+can be used to apply policies of permissions for those resources.
 
 Compartments structure:
 
@@ -127,10 +144,13 @@ Compartments structure:
 ```
 
 !!! tip "Compartments organization"
-    The Compartments of the Control Plane and Compute nodes are nested to set fine-granted permissions (Policies) when resources running in Control Plane to access the cloud APIs.
+    The Compartments of the Control Plane and Compute nodes are nested to set
+    fine-granted permissions (Policies) when resources running in Control
+    Plane to access the cloud APIs.
     This is not required, but it is used as reference in this guide.
 
-    The `parent` compartment can be used in any level in your tenant, including `root` level.
+    The `parent` compartment can be used in any level in your tenant,
+    including `root` level.
 
 Create the Compartments:
 
@@ -186,7 +206,10 @@ COMPARTMENT_ID_OPENSHIFT_CMP=$COMPARTMENT_ID_OPENSHIFT
 
 ### Upload the RHCOS image
 
-The image used in this guide is QCOW2. The `openshift-install` command provides the option `coreos print-stream-json` to show all the available artifacts. The steps below describes how to download the iamge, upload to a OCI bucket, then create a custom image.
+The image used in this guide is QCOW2. The `openshift-install` command
+provides the option `coreos print-stream-json` to show all the available
+artifacts. The steps below describes how to download the iamge, upload to
+a OCI bucket, then create a custom image.
 
 - Download the QCOW2 image:
 
@@ -205,7 +228,8 @@ oci os bucket create --name openshift-infra --compartment-id $COMPARTMENT_ID_OPE
 !!! tip "Helper"
     OCI CLI documentation for [`oci os bucket create`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/os/bucket/create.html)
 
-    OCI Console path: `Menu > Storage > Buckets > (Choose the Compartment `openshift`) > Create Bucket`
+    OCI Console path: `Menu > Storage > Buckets >
+    (Choose the Compartment `openshift`) > Create Bucket`
 
 - Upload the image to OCI Bucket:
 
@@ -233,13 +257,16 @@ oci compute image import from-object -bn openshift-infra --name images/${IMAGE_N
 
     OCI CLI documentation for [`oci os ns get`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/os/ns/get.html)
 
-    OCI Console path: `Menu > Storage > Buckets > (Choose the Compartment `openshift`) > (Choose the Bucket `openshift-infra`) > Objects > Upload`
+    OCI Console path: `Menu > Storage > Buckets >
+    (Choose the Compartment `openshift`) > (Choose the Bucket `openshift-infra`) > Objects > Upload`
 
 ## Section 1. Create Infrastructure resources
 
 ### Identity
 
-Set the policies to allow access from Cloud Controller Manager workloadss, running on control planes nodes, to the OCI API of resources running in the compartment `openshift`.
+Set the policies to allow access from Cloud Controller Manager workloadss,
+running on control planes nodes, to the OCI API of resources running
+in the compartment `openshift`.
 
 - Create Dynamic Group name `openshift-controlplanes` with the following rule:
 
@@ -254,7 +281,8 @@ $ echo "Any {instance.compartment.id = '$COMPARTMENT_ID_OPENSHIFT_CPL'}"
     - Description: `Group of OpenShift Control Plane instances`
     - Rule 1: ** < Value of `echo` with compartment id > **
 
-- Create policies allowing the Dynamic Group `openshift-controlplanes`  access resources in the Compartment `openshift`:
+- Create policies allowing the Dynamic Group `openshift-controlplanes`
+  access resources in the Compartment `openshift`:
 
 ```bash
 oci iam policy create --name openshift-oci-cloud-controller-manager \
@@ -271,11 +299,14 @@ oci iam policy create --name openshift-oci-cloud-controller-manager \
 !!! tip "Helper"
     OCI CLI documentation for [`oci iam policy create`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/iam/policy/create.html)
 
-    OCI Console path: `Menu > Identity & Security > Policies > (Select the Compartment 'openshift') > Create Policy > Name=openshift-oci-cloud-controller-manager`
+    OCI Console path: `Menu > Identity & Security > Policies >
+    (Select the Compartment 'openshift') > Create Policy > Name=openshift-oci-cloud-controller-manager`
 
 ### Network
 
->> WIP
+>> WIP/TODO/Question: How deepen we'll in partner provided infrastructure?
+>> This is very specific for the provider, but (IMO) to provide a full example,
+>> we'll need to detail it with provider-specific commands (CLI, terraform, ansible, etc)
 
 <!--
 > Temporary steps to create OCI network infra (VCN*, DNS and Load Balancers) to test the platform External feature. Note: this automation is not a goal for this document, I'll keep the step commented until WIP is able to test the doc, without focusing on the infra sections. I will check how to improve those sections later, maybe only providing references to the product docs - but considering those steps require effort for the user, we could point to some automation (maybe our CI tests?).
@@ -322,7 +353,9 @@ ansible-playbook mtulio.okd_installer.stack_loadbalancer -e @$VARS_FILE
 The provider network must be created using the [Networking requirements for user-provisioned infrastructure](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html#installation-network-user-infra_installing-platform-agnostic).
 
 !!! tip "Info"
-    The resource name provided in this guide is not standard, but follows a similar naming convention created by installer in supported cloud providers. The names will also be used in future sections to discover resources.
+    The resource name provided in this guide is not standard, but follows
+    a similar naming convention created by installer in supported cloud
+    providers. The names will also be used in future sections to discover resources.
 
 Create the VCN and dependencies with the following configuration:
 
@@ -344,7 +377,8 @@ Create the VCN and dependencies with the following configuration:
 >> WIP
 
 !!! tip "Helper"
-    It's not required to have a public accessible API and DNS domain, but it will allow to access the cluster without needing to keep a bastion host.
+    It's not required to have a public accessible API and DNS domain, but it
+    will allow to access the cluster without needing to keep a bastion host.
 
 DNS records for an API accessed from the internet:
 
@@ -380,11 +414,13 @@ Listeners:
 
 ## Section 2. Preparing the installation
 
-This section describes how to setup the OpenShift customizing the manifests used in the installation.
+This section describes how to setup the OpenShift customizing the manifests
+used in the installation.
 
 ### Create the installer configuration
 
-Modify and export the variables used to build the `install-config.yaml` and the later steps:
+Modify and export the variables used to build the `install-config.yaml` and
+the later steps:
 
 ```bash
 # Change Me
@@ -402,49 +438,16 @@ export PULL_SECRET_FILE="${HOME}/.openshift/pull-secret-latest.json"
 mkdir -p $INSTALL_DIR
 ```
 
-<!--
-#### (TEMP) Create install-config.yaml
-
-Create the `install-config.yaml` setting the Platform type to `None`:
-
-!!! danger "WIP Note"
-    The `install-config.yaml` must be adapted to set the `platform.external.*` when [the PR in the `openshift-installer`](https://github.com/openshift/installer/pull/7217) is merged.
-
-    The Infrastructure manifest will be temporarially patched to `External`, replacing the `None` type
-
-Create the `install-config.yaml`:
-
-!!! warning "FeatureSet"
-    The `featureSet` option must be `TechPreviewNoUpgrade` until platform external type is GA.
-
-```bash
-cat <<EOF > ${INSTALL_DIR}/install-config.yaml
-apiVersion: v1
-featureSet: TechPreviewNoUpgrade
-baseDomain: ${BASE_DOMAIN}
-metadata:
-  name: "${CLUSTER_NAME}"
-platform:
-  none: {}
-publish: External
-pullSecret: >
-  $(cat ${PULL_SECRET_FILE})
-sshKey: >
-  $(cat ${SSH_PUB_KEY_FILE})
-EOF
-```
-
--->
-
 #### Create install-config.yaml
 
 !!! danger "WIP Note"
     This is the final version after [the PR in the `openshift-installer`](https://github.com/openshift/installer/pull/7217) is merged.
 
-Create the `install-config.yaml` setting the Platform type to `External`:
+Create the `install-config.yaml` setting the Platform type to `external`:
 
 !!! warning "FeatureSet"
-    The `featureSet` option must be `TechPreviewNoUpgrade` until platform external type is GA.
+    The `featureSet` option must be `TechPreviewNoUpgrade` until platform
+    external type is GA.
 
 ```bash
 cat <<EOF > ${INSTALL_DIR}/install-config.yaml
@@ -470,50 +473,22 @@ EOF
 ./openshift-install create manifests --dir $INSTALL_DIR
 ```
 
-<!--
-
-#### (TEMP) Patch Infrastructure Object
-
-!!! danger "WIP Note"
-    This steps must be removed when [the PR in the `openshift-installer`](https://github.com/openshift/installer/pull/7217) will be merged.
-
-- Create the patch object for Platform External:
-
-```bash
-cat <<EOF > patch_cluster-infrastructure-02-config.yml
-spec:
-  platformSpec:
-    external:
-      platformName: oci
-    type: External
-status:
-  platform: External
-  platformStatus:
-    type: External
-    external:
-      cloudControllerManager:
-        state: External
-EOF
-```
-
-- Apply the patch to the Infrastructure manifest
-
-```bash
-./yq eval-all -i '. * load("patch_cluster-infrastructure-02-config.yml")' $INSTALL_DIR/manifests/cluster-infrastructure-02-config.yml
-```
--->
-
 #### Create manifests for OCI Cloud Controller Manager
 
-The steps in this section describes how to customize the OpenShift installation providing the Cloud Controller Manager manifests to be added in the bootstrap process.
+The steps in this section describes how to customize the OpenShift installation
+providing the Cloud Controller Manager manifests to be added in the bootstrap process.
 
 !!! warning "Info"
-    This guide is based in the OCI CCM v1.25.0. You must read the [project documentation](https://github.com/oracle/oci-cloud-controller-manager) for more information.
+    This guide is based in the OCI CCM v1.25.0. You must read the
+    [project documentation](https://github.com/oracle/oci-cloud-controller-manager)
+    for more information.
 
 - Create the namespace manifest:
 
 !!! danger "Important"
-    Is not recommended to create resources in namespaces prefixed with `kube-*` and `openshift-*`. The custom namespace manifest must be created, then deployment manifests must be adapted to used the custom namespace.
+    Is not recommended to create resources in namespaces prefixed with `kube-*`
+    and `openshift-*`. The custom namespace manifest must be created, then
+    deployment manifests must be adapted to used the custom namespace.
 
     See [the documentation](https://docs.openshift.com/container-platform/4.13/applications/projects/working-with-projects.html) for more information.
 
@@ -599,7 +574,8 @@ EOF1
 !!! warning "Question"
     - Is it possible to use NSG instead of SecList in Load Balancer?
 
-- Download manifests from [OCI CCM's Github](https://github.com/oracle/oci-cloud-controller-manager) and save it in the directory `${INSTALL_DIR}/manifests`:
+- Download manifests from [OCI CCM's Github](https://github.com/oracle/oci-cloud-controller-manager)
+  and save it in the directory `${INSTALL_DIR}/manifests`:
 
 ```bash
 export CCM_RELEASE=v1.25.0
@@ -636,7 +612,8 @@ EOF
 mv -v ./oci-01-ccm-01-rbac_*.yml ${INSTALL_DIR}/manifests/
 ```
 
-- Patch the CCM DaemonSet manifest setting the namespace, append the tolerations, mount CA, and add env vars for the kube API URL used in OpenShift:
+- Patch the CCM DaemonSet manifest setting the namespace, append the tolerations,
+  mount CA, and add env vars for the kube API URL used in OpenShift:
 
 ```bash
 # Create the pod template patch
@@ -703,9 +680,13 @@ $ tree $INSTALL_DIR/manifests/
 
 #### Create custom manifests for Kubelet
 
-This section describes the steps to create MachineConfig for kubeket to set the unique ID of the instance that an external provider used to identify a specific node.
+This section describes the steps to create MachineConfig for kubeket to set
+the unique ID of the instance that an external provider used to identify a specific node.
 
-The Provider ID must be set dynamically for each node. The steps below describes how to create a MachineConfig manifest to setup a systemd unit to create a kubelet configuration discoverying the Provider ID in OCI by querying the [Instance Metadata Service (IMDS)](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/gettingmetadata.htm).
+The Provider ID must be set dynamically for each node. The steps below describes
+how to create a MachineConfig manifest to setup a systemd unit to create a kubelet
+configuration discoverying the Provider ID in OCI by querying the
+[Instance Metadata Service (IMDS)](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/gettingmetadata.htm).
 
 - Create the butane file:
 
@@ -825,9 +806,11 @@ USER_DATA_URL=$(oci os preauth-request create --name bootstrap-${CLUSTER_NAME} \
     OCI CLI documentation for [`oci os preauth-request create`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.0/oci_cli_docs/cmdref/os/preauth-request/create.html)
 
 !!! warning "Attention"
-    Bucket Object URL will expires in one hour, if you are planning to create the bootstrap later, please adjust it.
+    Bucket Object URL will expires in one hour, if you are planning to create
+    the bootstrap later, please adjust it.
 
-    The certificates expires in 24 hours after the ignition files have been created, consider regenerating it if the ignitions are older than that.
+    The certificates expires in 24 hours after the ignition files have been
+    created, consider regenerating it if the ignitions are older than that.
 
 
 ## Section 3. Create the cluster
@@ -1175,7 +1158,8 @@ oc get all -n oci-ccm
 ./openshift-install --dir $INSTALL_DIR wait-for bootstrap-complete
 ```
 
-You can delete the bootstrap instance (or use it as bastion node until the instlalation has been completed).
+You can delete the bootstrap instance (or use it as bastion node until
+the instlalation has been completed).
 
 #### Approve certificates
 
