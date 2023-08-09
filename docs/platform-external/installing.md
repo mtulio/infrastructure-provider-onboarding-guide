@@ -1,15 +1,23 @@
 # Installing a cluster with Platform External
 
-The steps to install an OpenShift cluster with platform external must follow
-the same infrastructure requirements of the official documentation of
-["Installing a cluster on any platform"](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html).
+The steps to install an OpenShift cluster with platform external derives
+the guidance and infrastructure requirements of the "agnostic installation"
+method from the official documentation ["Installing a cluster on any platform"](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html).
 
-The `install-config.yaml` configuration must be changed for the platform `External`
-type. and the providers' manifests must be placed into the install
-directory before creating the ignitions.
+This method is a fully customized automation, allowing the user to deploy
+a cluster to use any automation they want, including provider's specific,
+to deploy an OpenShift cluster.
 
-The following sections describes the steps to install an OpenShift cluster
-with platform external with partner provisioned infrastructure.
+There are other methods and tools than using `openshift-installer` to deploy
+provider-agnostic cluster, like Assisted Installer, which is not covered by this guide.
+
+To begging with agnostic installation for the platform external, the `install-config.yaml`
+configuration must be changed for the setting the platform type to `External`, then
+the providers' manifests must be placed into the install directory before creating
+the ignition files.
+
+The following sections describe the steps to install an OpenShift cluster using
+platform external type using fully customized automation.
 
 
 Table of Contents:
@@ -39,23 +47,29 @@ Table of Contents:
 
 ### Clients
 
-The clients and pull secrets must be downloaded before you install OpenShift,
-see the steps described in ["Obtaining the installation program"](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html).
+The OpenShift client (`oc`) and Installer (`openshift-install`) must be
+downloaded, read the steps described in
+["Obtaining the installation program"](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html).
+
+The credentials to pull OpenShift images, also known as "Pull Secret", needs
+to be obtained from the [Red Hat Hybrid Cloud Console](https://console.redhat.com/openshift).
 
 ### Upload the RHCOS image
 
 > ToDo: show how to retrieve existing formats of RHCOS images from Stream (openshift-install)
 
-The Red Hat Core OS image is based on different types. You must choose the
-supported into your cloud provider. You can obtain the URL for each platform,
-architecture, and type using the following command:
+The Red Hat Core OS image is built for providers into different architectures and formats.
+You must choose and download the image from the format that is supported by the provider.
+
+You can obtain the URL for each platform, architecture, and format by running
+the following command:
 
 ~~~bash
 ./openshift-install coreos print-stream-json
 ~~~
 
 For example, to download an image format `QCOW2` built for `x86_64` architecture
-to the `OpenStack` platform, you can use the following command:
+and the `OpenStack` platform, you can use the following command:
 
 ~~~bash
 wget $(./openshift-install coreos print-stream-json | jq -r '.architectures["x86_64"].artifacts["openstack"].formats["qcow2.gz"].disk.location')
@@ -71,7 +85,7 @@ use it when creating virtual machines.
 - Use the least privileges
 - Segregate by containers (Resource Group, Compartments, or similar for cloud-specific) -->
 
-The account setup may vary from the cloud provider and the architecture you are
+The account setup may vary based on the cloud provider and the architecture on which you are
 deploying OpenShift. Some providers segregate the resources by containers,
 resource groups, compartments, and accounts.
 
@@ -82,27 +96,29 @@ CSI Driver, etc.
 
 ## Create Infrastructure resources
 
-As mentioned earlier, the platform external uses the Provider-Provisioned Infrastructure,
-which means there is no platform-specific automation on the installer to create infrastructure
-resources. Although, we strongly recommend providing documentation with a programmatic method
-to provision the infrastructure resources using official CLI or any Infrastructure as a Code
-tool, like Ansible or Terraform.
+Several types of infrastructure need to be created including compute nodes, storage, and networks.
+This document describes how to integrate those resources into the OpenShift installation process,
+and assumes that the entire process of creating the infrastructure will be automated for end users.
 
-The installer provides its implementation for each provider, using Terraform as a backend
-in the Installer-Provisioned Infrastructure (IPI) method. You can also check many UPI
-examples for integrated infrastructure provided in the installer repository:
+In OpenShift, the `openshift-install` binary is responsible to provision the infrastructure in
+integrated providers using IPI (Installer-Provisioned Infrastructure IPI) method, although the external
+platform does not have any automation implemented. The `openshift-install` uses Terraform as a
+backend on supported platforms to automatically create cloud resources and form them into a new cluster.
+In certain situations, the resource creation needs to be customized, in that case, the following
+examples show how to customize and automate the infrastructure creation provided in the
+installer repository:
 
 - [AWS CloudFormation Templates](https://github.com/openshift/installer/tree/master/upi/aws/cloudformation) for [AWS UPI](https://docs.openshift.com/container-platform/4.13/installing/installing_aws/installing-aws-user-infra.html)
 - [ARM Templates](https://github.com/openshift/installer/tree/master/upi/azure) for [Azure UPI](https://docs.openshift.com/container-platform/4.13/installing/installing_azure/installing-azure-user-infra.html)
 - [Ansible Playbooks](https://github.com/openshift/installer/tree/master/upi/openstack) for [OpenStack UPI](https://docs.openshift.com/container-platform/4.13/installing/installing_openstack/installing-openstack-user-kuryr.html)
 
-The steps below will point to the OpenShift documentation for each infrastructure component section.
+The steps below point to the OpenShift documentation for each infrastructure component section.
 
 ### Identity
 
-The agnostic installation used by platform external does not require any identity,
+The agnostic installation used by the platform external does not require any identity,
 although the provider's components may require identity to communicate with the cloud APIs.
-The OpenShift prioritizes, and recommends, the least privileges and password-less authentication
+OpenShift prioritizes, and recommends, the least privileges and password-less authentication
 method, or short-lived tokens, when providing credentials to components.
 
 ### Network
@@ -119,10 +135,10 @@ the provider offerings.
 
 ### DNS
 
-There is no specific configuration for DNS when using platform external, the setup
+There is no specific configuration for DNS when using the platform external, the setup
 must follow the same as agnostic installation and the provider configuration.
 
-Please take a look at the following guides to the DNS setup:
+Please take a look at the following guides for the DNS setup:
 
 - [User-provisioned DNS requirements](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html#installation-dns-user-infra_installing-platform-agnostic)
 - [Validating DNS resolution for user-provisioned infrastructure](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html#installation-user-provisioned-validating-dns_installing-platform-agnostic)
@@ -151,7 +167,7 @@ Follow the steps to [Manually create the installation configuration file](https:
 customizing the `platform` object, setting the type to `external`, and the
 `platformName` to the cloud provider's name:
 
-> TODO/check: is the installer's survey set correctly the platform external type in config? How the ProviderName is capture in the suvery stage?
+> TODO/check: is the installer's survey set correctly to the platform external type in config? How the ProviderName is capture in the survey stage?
 > Q: Do we need to add ./openshift-install create install-config? Or just provide a
 > full install-config.yaml example
 
@@ -174,13 +190,17 @@ The `openshift/` and `manifests/` directory will be created.
 
 The steps below describe how to customize the OpenShift installation.
 
-The manifests directory will be copied to the bootstrap and applied when the core
+The manifests directory will be copied to the bootstrap host and applied when the core
 components are initialing the Control Plane.
 
 #### Create custom manifests for CCM
 
-In that stage, the Cloud Controller Manager (CCM) manifests must be created, as it is
-responsible to initialize the nodes. A set of tolerations must be set to the pod spec
+If a Cloud Controller Manager (CCM) is available for the platform, it can be incorporated by
+custom manifests added in the install directory.
+
+This section describes the minimal requirements to be defined in those custom manifests.
+
+1) A set of tolerations must be set to the CCM's pod spec
 to ensure the controllers are initialized even if the node is not yet ready.
 
 ```yaml
@@ -198,16 +218,77 @@ to ensure the controllers are initialized even if the node is not yet ready.
           effect: NoSchedule
 ```
 
-The manifest below can be used as a Deployment configuration:
+2) OpenShift strongly recommends deploying the CCM's resources in a custom namespace, setting
+properly the security constraints to it. For example:
 
 ```yaml
-# This a template that can be used as a base to run your own cluster controller manager in openshift, all you need is to:
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ cloud provider name }}-cloud-controller-manager
+  annotations:
+    workload.openshift.io/allowed: management
+  labels:
+    "pod-security.kubernetes.io/enforce": "privileged"
+    "pod-security.kubernetes.io/audit": "privileged"
+    "pod-security.kubernetes.io/warn": "privileged"
+    "security.openshift.io/scc.podSecurityLabelSync": "false"
+    "openshift.io/run-level": "0"
+    "pod-security.kubernetes.io/enforce-version": "v1.24"
+```
+
+3) Adjust the RBAC according to the CCM's needs:
+
+- Service Account
+
+```yaml
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: cloud-controller-manager
+  namespace: {{ cloud provider name }}-cloud-controller-manager
+```
+
+- Cluster Role
+
+```yaml
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: system:cloud-controller-manager
+  labels:
+    kubernetes.io/cluster-service: "true"
+rules:
+  {{ define here the authorization rules required by your CCM }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: oci-cloud-controller-manager
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: system:cloud-controller-manager
+subjects:
+- kind: ServiceAccount
+  name: cloud-controller-manager
+  namespace: {{ cloud provider name }}-cloud-controller-manager
+```
+
+
+4) The manifest below can be used as a Deployment configuration:
+
+```yaml
+# This a template that can be used as a base to run your cluster controller manager in openshift, all you need is to:
 # - replace values between {{ and }} with your own ones
 # - specify a command to startup the CCM in your container
 # - define and mount extra volumes if needed
 # This example defines the CCM as a Deployment, but a DaemonSet is also possible as long as Pod's template is defined in the same way.
-kind: Deployment
+---
 apiVersion: apps/v1
+kind: Deployment
 metadata:
   name: {{ cloud provider name }}-cloud-controller-manager # replace me
   namespace: {{ cloud provider name }}-cloud-controller-manager # replace me
@@ -297,30 +378,7 @@ spec:
               - key: ca-bundle.crt
                 path: tls-ca-bundle.pem
         # add extra volumes if needed
----
-apiVersion: rbac.authorization.k8s.io/v1
-kind: ClusterRole
-metadata:
-  name: system:cloud-controller-manager
-  labels:
-    kubernetes.io/cluster-service: "true"
-rules:
-  {{ define here the authorization rules required by your CCM }}
----
-kind: ClusterRoleBinding
-apiVersion: rbac.authorization.k8s.io/v1
-metadata:
-  name: oci-cloud-controller-manager
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: system:cloud-controller-manager
-subjects:
-- kind: ServiceAccount
-  name: cloud-controller-manager
-  namespace: {{ cloud provider name }}-cloud-controller-manager
 ```
-
 
 #### Create custom manifests for Kubelet
 
@@ -331,7 +389,7 @@ requiring a valid `${KUBELET_PROVIDERID}`
 The value of `${KUBELET_PROVIDERID}` depends on CCM, we recommend reading the cloud
 provider's CCM to check the appropriate value.
 
-In OpenShift you can set the `${KUBELET_PROVIDERID}` for each node using the
+In OpenShift you can set the `${KUBELET_PROVIDERID}` on each node using the
 [MachineConfiguration](https://docs.openshift.com/container-platform/4.13/rest_api/machine_apis/machineconfig-machineconfiguration-openshift-io-v1.html).
 
 The example below shows how to create a `MachineConfig` to retrieve the provider's
@@ -340,7 +398,7 @@ ID from the Instance/VM Metadata service, setting it to the syntax `providerName
 ```yaml
 # https://github.com/openshift/machine-config-operator/blob/master/templates/common/aws/files/usr-local-bin-aws-kubelet-providerid.yaml
 variant: openshift
-version: 4.12.0
+version: 4.13.0
 metadata:
   name: 00-{{ machine_role }}-kubelet-providerid
   labels:
@@ -358,9 +416,7 @@ storage:
             echo "Not replacing existing ${NODECONF}"
             exit 0
         fi
-
         PROVIDERID=$(curl -sL http://169.254.169.254/metadata/id);
-
         cat > "${NODECONF}" <<EOF
         [Service]
         Environment="KUBELET_PROVIDERID=providerName://${PROVIDERID}"
@@ -405,7 +461,7 @@ $ butane config-worker.bu \
 #### Create additional manifests
 
 If the CCM or any other component you want to add in install time requires
-dependencies, you can also add it to the respective directories.
+dependencies, you can also add them to the respective directories.
 
 For example, if the CCM requires secrets or custom configuration, you can create it:
 
@@ -431,7 +487,7 @@ Once the manifests are placed, you can create the cluster ignition configuration
 ./openshift-install create ignition-configs
 ~~~
 
-The files with the extension `.ign` must be generated.
+The files with the extension `.ign` will be generated by the above command.
 
 ```text
 .
@@ -446,7 +502,7 @@ The files with the extension `.ign` must be generated.
 
 ## Create compute nodes
 
-The step to provision compute nodes must be cloud-specific. The required steps
+The step to provision the compute nodes is cloud-specific. The required steps
 to boot RHCOS is different for each compute role:
 
 - bootstrap node: must use the ignition file `bootstrap.ign`
@@ -461,10 +517,12 @@ Requirements:
 
 ### Bootstrap
 
+The bootstrap node is a temporary machine used only during the installation process.
+
 The `bootstrap.ign` must be used to create the bootstrap node. Most of the cloud
 providers have size limits in the user data, so you must store the `bootstrap.ign`
 externally, then retrieve it in the cloud-init process. If the cloud provider
-has blob service allowing to create of a signed HTTPS URL, it can be used to store
+has a blob service allowing the creation of a signed HTTPS URL, it can be used to store
 and serve the ignition file. The cloud-init could be used as follows:
 
 ```json
@@ -486,24 +544,41 @@ private API Load Balancer.
 ### Control Plane
 
 Three control plane nodes must be created using the ignition file `master.ign`
-when setting the cloud init/user-data configuration.
+when setting the cloud-init/user-data configuration.
 
 ### Compute/workers
 
-Three compute nodes must be created using the ignition file `master.ign` when
-setting the cloud init/user-data configuration.
+Compute nodes (two or more are recommended) must be created using the ignition
+file `master.ign` when setting the cloud-init/user-data configuration.
 
 #### Approve certificates
 
-The Certificate Signing Requests (CSR) must be approved by the operator in the
-UPI deployments.
+The Certificate Signing Requests (CSR) for each compute node must be approved
+by the user, and lately automated by the provider.
+
+See the references on how to approve it:
 
 - [Certificate signing requests management](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html#csr-management_installing-platform-agnostic)
 
 - [Approving the certificate signing requests for your machines](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html#installation-approve-csrs_installing-platform-agnostic)
 
 
-## Next
+#### Review the installation
+
+Once the Control Plane nodes join the cluster, you can destroy the bootstrap node.
+You can check it by running:
+
+```bash
+./openshift-install wait-for bootstrap-complete --log-level debug
+```
+
+Wait for the installation to be completed:
+
+```bash
+./openshift-install wait-for install-complete --log-level debug
+```
+
+## Next steps
 
 - [Run conformance tests on your custom installation](./use-case-test-with-opct.md)
-- [Check the use case of deploying OpenShift cluster on Oracle Cloud Infrastructure using UPI method with Platform External](./use-case-oci-upi.md)
+- [Check the use case of deploying OpenShift cluster on Oracle Cloud Infrastructure](./use-case-oci-upi.md)
