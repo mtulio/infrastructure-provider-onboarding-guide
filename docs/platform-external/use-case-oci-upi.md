@@ -355,31 +355,265 @@ Create the VCN and dependencies with the following configuration:
 | ... | ... | ... | ... |
 | Internet GW | | -- | |
 | Nat GW | | -- | |
+| Route Table: Public | | -- | |
+| Route Table: Private | | -- | |
 | ... | ... | ... | ... |
 
-Steps:
-
-> TODO
-
-### DNS
-
->> WIP
-
-!!! tip "Helper"
-    It's not required to have a public accessible API and DNS domain, but it
-    will allow to access the cluster without needing to keep a bastion host.
-
-DNS records for an API accessed from the internet:
-
-| Domain | Record | Value |
-| -- | -- | -- |
-| `${CLUSTER_NAME}`.`${BASE_DOMAIN}` | api | Public IP Address or DNS for the Load Balancer |
-| `${CLUSTER_NAME}`.`${BASE_DOMAIN}` | api-int | Private IP Address or DNS for the Load Balancer |
-| `${CLUSTER_NAME}`.`${BASE_DOMAIN}` | *.apps | Public IP Address or DNS for the Load Balancer |
+> TODO:
 
 Steps:
 
-> TODO
+- VCN
+- Security List (need?)
+- IGW
+- NGW
+- Route Table: Private
+- Route Table: Public
+- Subnets
+- NSG
+
+
+```sh
+# https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.30.2/oci_cli_docs/cmdref/network.html
+
+# VCN
+# https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.30.2/oci_cli_docs/cmdref/network/vcn/create.html
+VCN_ID=$(oci network vcn create \
+  --compartment-id "${COMPARTMENT_ID_OPENSHIFT}" \
+  --display-name "${CLUSTER_NAME}-vcn"\
+  --cidr-block "10.0.0.0/20" \
+  --dns-label "ocp" \
+  --wait-for-state AVAILABLE \
+  --query data.id --raw-output)
+
+# IGW
+# https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.30.2/oci_cli_docs/cmdref/network/internet-gateway/create.html
+IGW_ID=$(oci network internet-gateway create \
+  --compartment-id $compartment_id \
+  --display-name "${CLUSTER_NAME}-igw"\
+  --is-enabled true \
+  --wait-for-state AVAILABLE \
+  --vcn-id $VCN_ID \
+  --query data.id --raw-output)
+
+# NAT Gateway
+# # https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.30.2/oci_cli_docs/cmdref/network/nat-gateway/create.html
+NGW_ID=$(oci network nat-gateway create \
+  --compartment-id ${COMPARTMENT_ID_OPENSHIFT} \
+  --display-name "${CLUSTER_NAME}-natgw"\
+  --vcn-id $VCN_ID \
+  --wait-for-state AVAILABLE \
+  --query data.id --raw-output)
+
+# Route Table: Public
+## https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.30.2/oci_cli_docs/cmdref/network/route-table/create.html
+RTB_PUB_ID=$(oci network route-table create \
+--compartment-id ${COMPARTMENT_ID_OPENSHIFT} \
+--vcn-id $VCN_ID \
+--display-name "${CLUSTER_NAME}-rtb-public" \
+--route-rules "[{\"cidrBlock\":\"0.0.0.0/0\",\"networkEntityId\":\"$IGW_ID\"}]" \
+--wait-for-state AVAILABLE \
+  --query data.id --raw-output)
+
+# Route Table: Private
+RTB_PVT_ID=$(oci network route-table create \
+--compartment-id ${COMPARTMENT_ID_OPENSHIFT} \
+--vcn-id $VCN_ID \
+--display-name "${CLUSTER_NAME}-rtb-private" \
+--route-rules "[{\"cidrBlock\":\"0.0.0.0/0\",\"networkEntityId\":\"$NGW_ID\"}]" \
+--wait-for-state AVAILABLE \
+  --query data.id --raw-output)
+
+# Subnet Public (regional)
+# https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.30.2/oci_cli_docs/cmdref/network/subnet/create.html
+SUBNET_PUB_ID=$(oci network subnet create \
+--compartment-id ${COMPARTMENT_ID_OPENSHIFT} \
+--vcn-id $VCN_ID \
+--display-name "${CLUSTER_NAME}-net-public" \
+--dns-label "pub" \
+--cidr-block "10.0.0.0/22" \
+--route-table-id $RTB_PUB \
+--wait-for-state AVAILABLE \
+--query data.id --raw-output)
+
+# Subnet Private (regional)
+SUBNET_PVT_ID=$(oci network subnet create \
+--compartment-id ${COMPARTMENT_ID_OPENSHIFT} \
+--vcn-id $VCN_ID \
+--display-name "${CLUSTER_NAME}-net-private" \
+--dns-label "priv" \
+--cidr-block "10.0.64.0/22" \
+--route-table-id $RTB_PVT \
+--prohibit-internet-ingress true \
+--prohibit-public-ip-on-vnic true \
+--wait-for-state AVAILABLE \
+--query data.id --raw-output)
+
+
+# NSGs (empty to allow be refrenced in the rules)
+## NSG Control Plane
+## https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.30.2/oci_cli_docs/cmdref/network/nsg/create.html
+NSG_ID_CPL=$(oci network nsg create \
+--compartment-id ${COMPARTMENT_ID_OPENSHIFT} \
+--vcn-id $VCN_ID \
+--display-name "${CLUSTER_NAME}-nsg-controlplane" \
+--wait-for-state AVAILABLE \
+--query data.id --raw-output)
+
+## NSG Compute/workers
+NSG_ID_CMP=$(oci network nsg create \
+--compartment-id ${COMPARTMENT_ID_OPENSHIFT} \
+--vcn-id $VCN_ID \
+--display-name "${CLUSTER_NAME}-nsg-compute" \
+--wait-for-state AVAILABLE \
+--query data.id --raw-output)
+
+## NSG Load Balancers
+NSG_ID_NLB=$(oci network nsg create \
+--compartment-id ${COMPARTMENT_ID_OPENSHIFT} \
+--vcn-id $VCN_ID \
+--display-name "${CLUSTER_NAME}-nsg-nlb" \
+--wait-for-state AVAILABLE \
+--query data.id --raw-output)
+
+# NSG Rules: Control Plane NSG
+## https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.30.2/oci_cli_docs/cmdref/network/nsg/rules/add.html
+# oci network nsg rules add --generate-param-json-input security-rules
+cat <<EOF > ./oci-vcn-nsg-rule-nodes.json
+[
+  {
+    "description": "allow all outbound traffic",
+    "destination": "0.0.0.0/0", "destination-type": "CIDR_BLOCK",
+    "direction": "EGRESS", "is-stateless": false, "is-valid": true
+  },
+  {
+    "description": "All from controlplane NSG",
+    "direction": "INGRESS", "is-stateless": false,
+    "is-valid": true, "protocol": "all",
+    "source": "$NSG_ID_CPL", "source-type": "NETWORK_SECURITY_GROUP"
+  },
+  {
+    "description": "All from control plane NSG",
+    "direction": "INGRESS", "is-stateless": false,
+    "is-valid": true, "protocol": "all",
+    "source": "$NSG_ID_CMP", "source-type": "NETWORK_SECURITY_GROUP"
+  },
+  {
+    "description": "All from control plane NSG",
+    "direction": "INGRESS", "is-stateless": false,
+    "is-valid": true, "protocol": "all",
+    "source": "$NSG_ID_NLB", "source-type": "NETWORK_SECURITY_GROUP"
+  },
+  {
+    "description": "allow ssh to bootstrap",
+    "direction": "INGRESS", "is-stateless": false,
+    "is-valid": true, "protocol": "6",
+    "source": "0.0.0.0/0", "source-type": "CIDR_BLOCK",
+    "tcp-options": {
+      "destination-port-range": {
+        "max": 22,
+        "min": 22
+      }
+    }
+  }
+]
+EOF
+oci network nsg rules add \
+--nsg-id "${NSG_ID_CPL}" \
+--security-rules file://oci-vcn-nsg-rule-nodes.json
+
+oci network nsg rules add \
+--nsg-id "${NSG_ID_CMP}" \
+--security-rules file://oci-vcn-nsg-rule-nodes.json
+
+# NSG Security rules for NSG
+cat <<EOF > ./oci-vcn-nsg-rule-nlb.json
+[
+  {
+    "description": "allow Kube API",
+    "direction": "INGRESS", "is-stateless": false, "is-valid": true,
+    "source-type": "CIDR_BLOCK", "protocol": "6", "source": "0.0.0.0/0",
+    "tcp-options": { "destination-port-range": {
+      "max": 6443, "min": 6443
+    }}
+  },
+  {
+    "description": "allow Kube API to Control Plane",
+    "destination": "$NSG_ID_CPL",
+    "destination-type": "NETWORK_SECURITY_GROUP",
+    "direction": "EGRESS", "is-stateless": false, "is-valid": true,
+    "protocol": "6", "tcp-options":{"destination-port-range":{
+      "max": 6443, "min": 6443
+    }}
+  },
+  {
+    "description": "allow MCS listener from control plane pool",
+    "direction": "INGRESS",
+    "is-stateless": false, "is-valid": true, "protocol": "6",
+    "source": "$NSG_ID_CPL", "source-type": "NETWORK_SECURITY_GROUP",
+    "tcp-options": {"destination-port-range":{
+      "max": 22623, "min": 22623
+    }}
+  },
+  {
+    "description": "allow MCS listener from compute pool",
+    "direction": "INGRESS",
+    "is-stateless": false, "is-valid": true, "protocol": "6",
+    "source": "$NSG_ID_CMP", "source-type": "NETWORK_SECURITY_GROUP",
+    "tcp-options": {"destination-port-range": {
+      "max": 22623, "min": 22623
+    }}
+  },
+  {
+    "description": "allow MCS listener access the Control Plane backends",
+    "destination": "$NSG_ID_CPL",
+    "destination-type": "NETWORK_SECURITY_GROUP",
+    "direction": "EGRESS", "is-stateless": false, "is-valid": true,
+    "protocol": "6", "tcp-options": {"destination-port-range": {
+      "max": 22623, "min": 22623
+    }}
+  },
+  {
+    "description": "allow listener for Ingress HTTP",
+    "direction": "INGRESS", "is-stateless": false, "is-valid": true,
+    "source-type": "CIDR_BLOCK", "protocol": "6", "source": "0.0.0.0/0",
+    "tcp-options": {"destination-port-range": {
+      "max": 80, "min": 80
+    }}
+  },
+  {
+    "description": "allow listener for Ingress HTTP",
+    "direction": "INGRESS", "is-stateless": false, "is-valid": true,
+    "source-type": "CIDR_BLOCK", "protocol": "6", "source": "0.0.0.0/0",
+    "tcp-options": {"destination-port-range": {
+      "max": 443, "min": 443
+    }}
+  },
+  {
+    "description": "allow listener access the Compute pool",
+    "destination": "$NSG_ID_CMP",
+    "destination-type": "NETWORK_SECURITY_GROUP",
+    "direction": "EGRESS", "is-stateless": false, "is-valid": true,
+    "protocol": "6", "tcp-options": {"destination-port-range": {
+      "max": 80, "min": 80
+    }}
+  },
+  {
+    "description": "allow listener access the Compute pool",
+    "destination": "$NSG_ID_CMP",
+    "destination-type": "NETWORK_SECURITY_GROUP",
+    "direction": "EGRESS", "is-stateless": false, "is-valid": true,
+    "protocol": "6", "tcp-options": {"destination-port-range": {
+      "max": 443, "min": 443
+    }}
+  }
+]
+EOF
+
+oci network nsg rules add \
+--nsg-id "${NSG_ID_MSG}" \
+--security-rules file://oci-vcn-nsg-rule-nsg.json
+```
 
 ### Load Balancer
 
@@ -408,6 +642,42 @@ Listeners:
 Steps:
 
 > TODO
+
+
+
+- Get Public Subnet
+- Get Security Group ID
+- Create NLB
+- Create BackendSets
+- Create Listeners
+
+https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.30.2/oci_cli_docs/cmdref/nlb.html
+
+### DNS
+
+>> WIP
+
+!!! tip "Helper"
+    It's not required to have a public accessible API and DNS domain, but it
+    will allow to access the cluster without needing to keep a bastion host.
+
+DNS records for an API accessed from the internet:
+
+| Domain | Record | Value |
+| -- | -- | -- |
+| `${CLUSTER_NAME}`.`${BASE_DOMAIN}` | api | Public IP Address or DNS for the Load Balancer |
+| `${CLUSTER_NAME}`.`${BASE_DOMAIN}` | api-int | Private IP Address or DNS for the Load Balancer |
+| `${CLUSTER_NAME}`.`${BASE_DOMAIN}` | *.apps | Public IP Address or DNS for the Load Balancer |
+
+Steps:
+
+> TODO
+
+- Get Public IP for LB
+- Get Private IP for LB
+- Create records
+
+
 
 ## Section 2. Preparing the installation
 
