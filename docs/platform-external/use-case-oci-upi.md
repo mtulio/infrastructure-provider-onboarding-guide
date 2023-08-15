@@ -1,23 +1,17 @@
 # Use case of installing a cluster with external platform type in Oracle Cloud Infrastructure
 
-> NOTE: almost ready for review in the content (description/topics).
-> The technical (commands) is in progress.
+This use case provides details of how to deploy an OpenShift cluster using external
+platform type in Oracle Cloud Infrastructure (OCI), deploying providers' Cloud Controller
+Manager (CCM).
 
-!!! note "Goal"
-    Describe the steps to install an OCP cluster using UPI in OCI, detailing
-    the customization options to setup external platform type.
-
-This guide provides details of how to setup an OpenShift cluster using external
-platform type in Oracle Cloud Infrastructure (OCI).
-
-The installation method used in this guide for external platform type is
-User-Provided Infrastructure (UPI). The steps provide low-level details to
+The installation method used in this guide is [agnostic installation](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html)
+adapted to the external platform type. The steps provide low-level details to
 customize the provider's components like Cloud Controller Manager (CCM).
 
 !!! tip "Automation options"
     The goal of this document is to provide details of platform external type,
-    without focus in the automation of required infrastructure. The tool used to
-    provisioning the resources described in this guide is the OCI CLI.
+    without focusing in the infrastructure automation. The tool used to
+    provisioning the resources described in this guide is the Oracle Cloud CLI.
 
     Alternatively the automation can be done using official
     [Ansible](https://docs.oracle.com/en-us/iaas/tools/oci-ansible-collection/4.25.0/index.html)
@@ -25,14 +19,13 @@ customize the provider's components like Cloud Controller Manager (CCM).
     modules to achieve the same goal.
 
 !!! danger "Unsupported Document"
-    This guide is created only for Red Hat partners or providers willing to integrate
-    its component in OpenShift, and should not be used as an official or supported
-    OpenShift installation method.
+    This guide is created only for Red Hat partners or providers aiming to extend
+    external components in OpenShift, and should not be used as an official or
+    supported OpenShift installation method.
 
-    Please look at the product documentation to get the supported path.
+    Please review the product documentation to get the supported path.
 
 <!-- As described in the [installing section](./installing.md), when setting the Platform type to `External`, the OpenShift components (Kube Controller Manager, Cluster Cloud Controller Manager, Kubelet) expects to an external Cloud Controller Manager be installed to initialize the nodes.
-
 ... -->
 
 Table of Contents
@@ -67,14 +60,9 @@ Table of Contents
 
 Download the OpenShift CLI and installer:
 
-- [Navigate to the release controller](https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/#4-dev-preview)
-
-- Choose the release image name and extract the tools (clients):
+- [Navigate to the release controller](https://openshift-release.apps.ci.l2s4.p1.openshiftapps.com/#4-dev-preview) and choose the release image:
 
 !!! tip "Credentials"
-    The Red Hat developer credential is required to pull from OpenShift CI
-    repository `registry.ci.openshift.org`.
-
     The [Red Hat Cloud credential (Pull secret)](https://console.redhat.com/openshift/install/metal/agent-based)
     is required to pull from the repository `quay.io/openshift-release-dev/ocp-release`.
 
@@ -84,27 +72,25 @@ Download the OpenShift CLI and installer:
     The Platform External is available in releases 4.14+ created after dev
     preview release 4.14.0-ec.4.
 
+- Extract the tools (clients):
 ```sh
-export OCP_RELEASE=quay.io/openshift-release-dev/ocp-release:4.14.0-ec.4-x86_64
-export OPENSHIFT_INSTALL_RELEASE_IMAGE_OVERRIDE=$OCP_RELEASE
-oc adm release extract -a $PULL_SECRET_FILE --tools $OCP_RELEASE
+oc adm release extract -a $PULL_SECRET_FILE \
+  --tools "quay.io/openshift-release-dev/ocp-release:4.14.0-ec.4-x86_64"
 ```
 
-Extract the tarbal files:
-
+- Extract the tarbal files:
 ```sh
 tar xvfz openshift-client-*.tar.gz
 tar xvfz openshift-install-*.tar.gz
 ```
 
-The clients `openshift-install` and `oc` must be in the current directory.
+The binaries `openshift-install` and `oc` must be in the current directory.
 
 #### OCI Command Line Interface
 
 The OCI CLI is used in this guide to create infrastructure resources in the OCI.
 
 - [Install the CLI](https://docs.oracle.com/en-us/iaas/Content/API/SDKDocs/cliinstall.htm#InstallingCLI__linux_and_unix):
-
 ```sh
 python3.9 -m venv ./venv-oci && source ./venv-oci/bin/activate
 pip install oci-cli
@@ -115,17 +101,15 @@ pip install oci-cli
 
 #### Utilities
 
-- [jq](https://jqlang.github.io/jq/download/): used to filter the results returned by CLI
+- Download [jq](https://jqlang.github.io/jq/download/): used to filter the results returned by CLI
 
-- [yq](https://github.com/mikefarah/yq/releases/tag/v4.34.1): used to patch the `yaml` manifests.
-
+- Download [yq](https://github.com/mikefarah/yq/releases/tag/v4.34.1): used to patch the `yaml` manifests.
 ~~~bash
 wget -O yq "https://github.com/mikefarah/yq/releases/download/v4.34.1/yq_linux_amd64"
 chmod u+x yq
 ~~~
 
-- [butane](https://github.com/coreos/butane): used to create MachineConfig files.
-
+- Download [butane](https://github.com/coreos/butane): used to create MachineConfig files.
 ~~~bash
 wget -O butane "https://github.com/coreos/butane/releases/download/v0.18.0/butane-x86_64-unknown-linux-gnu"
 chmod u+x butane
@@ -133,77 +117,53 @@ chmod u+x butane
 
 ### Setup the Provider Account
 
-Oracle provides Compartments to aggregate resources. The compartments also
-can be used to apply policies of permissions for those resources.
+A user with administrator access was used to create OpenShift cluster described
+in this use case.
 
-Compartments structure:
+The cluster was created in a dedicated Compartment in Oracle Cloud Infrastructure,
+it allows to create custom policies to components like Cloud Controller Manager.
 
-```
-[parent]
- '- openshift
-   '- controlplane
-   '- compute
-```
+The steps below describes how to create a compartment from any nested level,
+and create predefined tags used to apply policies on this compartment.
 
-!!! tip "Compartments organization"
-    The Compartments of the Control Plane and Compute nodes are nested to set
-    fine-granted permissions (Policies) when resources running in Control
-    Plane to access the cloud APIs.
-    This is not required, but it is used as reference in this guide.
+<!-- Alternativelly of having many "CLI" steps, we can structure this document to create
+hide sections, with alternatives to expand if the reader are interested to run all the
+OCI specific steps. Unfortunately mkdocs supports only collapssable blocks, making the
+rendered markdown document in github very complicated to read.
+https://squidfunk.github.io/mkdocs-material/reference/admonitions/#collapsible-blocks
+Uncomment the following line and create tabulations to the content to be under the hidden
+section.
+-->
+<!-- 
+??? note "Click to expand"
+-->
 
-    The `parent` compartment can be used in any level in your tenant,
-    including `root` level.
 
-Create the Compartments:
+Steps:
 
-- Set the parent compartment id variable:
+- Set the compartment id variables:
+```sh
+# Identity Domain information (to create dynamic group)
+IDENTITY_DOMAIN_OCIID="<used to tbe root compartment id>"
 
-```bash
-export PARENT_COMPARTMENT_ID="<ocid1.compartment.oc1...>"
+# A new compartment will be created as a child of this:
+PARENT_COMPARTMENT_ID="<ocid1.compartment.oc1...>"
+
+# Cluster Name
+CLUSTER_NAME="demo-oci-001"
 ```
 
 - Create `openshift` compartment:
-
-```bash
+```sh
+COMPARTMENT_NAME_OPENSHIFT="$CLUSTER_NAME"
 oci iam compartment create \
     --compartment-id "$PARENT_COMPARTMENT_ID" \
-    --description "openshift compartment" \
-    --name "openshift"
+    --description "$COMPARTMENT_NAME_OPENSHIFT compartment" \
+    --name "$COMPARTMENT_NAME_OPENSHIFT"
 
-COMPARTMENT_ID_OPENSHIFT=$(oci iam compartment list --name openshift \
-    --compartment-id "$PARENT_COMPARTMENT_ID" | jq -r '.data[0].id')
-```
-
-!!! tip "Helper"
-    OCI CLI documentation for [`oci iam compartment create`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/iam/compartment/create.html)
-
-    OCI Console path: `Menu > Identity & Security > Compartments`
-
-- Create `openshift/controlplane` compartment and export the variable `COMPARTMENT_ID_OPENSHIFT_CPL`:
-
-```bash
-# TODO/tmp: Move back to nested compartment after troubleshooting install issues (CCM access to APIs)
-# oci iam compartment create --name "controlplane" \
-#     --compartment-id "$COMPARTMENT_ID_OPENSHIFT" \
-#     --description "openshift compartment for control plane nodes"
-
-# COMPARTMENT_ID_OPENSHIFT_CPL=$(oci iam compartment list --name controlplane \
-#    --compartment-id "$COMPARTMENT_ID_OPENSHIFT" | jq -r '.data[0].id')
-
-COMPARTMENT_ID_OPENSHIFT_CPL=$COMPARTMENT_ID_OPENSHIFT
-```
-
-- Create `openshift/compute` compartment and export the variable `COMPARTMENT_ID_OPENSHIFT_CMP`:
-
-```bash
-# oci iam compartment create --name "compute" \
-#     --compartment-id "$COMPARTMENT_ID_OPENSHIFT" \
-#     --description "openshift compartment for control plane nodes"
-
-# COMPARTMENT_ID_OPENSHIFT_CMP=$(oci iam compartment list --name compute \
-#     --compartment-id "$COMPARTMENT_ID_OPENSHIFT" | jq -r '.data[0].id')
-
-COMPARTMENT_ID_OPENSHIFT_CMP=$COMPARTMENT_ID_OPENSHIFT
+COMPARTMENT_ID_OPENSHIFT=$(oci iam compartment list \
+  --name $COMPARTMENT_NAME_OPENSHIFT \
+  --compartment-id "$PARENT_COMPARTMENT_ID" | jq -r '.data[0].id')
 ```
 
 ### Upload the RHCOS image
@@ -214,21 +174,19 @@ artifacts. The steps below describes how to download the iamge, upload to
 a OCI bucket, then create a custom image.
 
 - Get the image name to be used in later steps:
-
-```bash
-export IMAGE_NAME=$(basename $(./openshift-install coreos print-stream-json | jq -r '.architectures["x86_64"].artifacts["openstack"].formats["qcow2.gz"].disk.location'))
+```sh
+IMAGE_NAME=$(basename $(./openshift-install coreos print-stream-json | jq -r '.architectures["x86_64"].artifacts["openstack"].formats["qcow2.gz"].disk.location'))
 ```
 
 - Download the `QCOW2` image:
-
 ~~~bash
 wget $(./openshift-install coreos print-stream-json | jq -r '.architectures["x86_64"].artifacts["openstack"].formats["qcow2.gz"].disk.location')
 ~~~
 
-- Create the bucket `openshift-infra`:
-
-```bash
-oci os bucket create --name openshift-infra --compartment-id $COMPARTMENT_ID_OPENSHIFT
+- Create the bucket:
+```sh
+BUCKET_NAME="${CLUSTER_NAME}-infra"
+oci os bucket create --name $BUCKET_NAME --compartment-id $COMPARTMENT_ID_OPENSHIFT
 ```
 
 !!! tip "Helper"
@@ -237,9 +195,8 @@ oci os bucket create --name openshift-infra --compartment-id $COMPARTMENT_ID_OPE
     OCI Console path: `Menu > Storage > Buckets > (Choose the Compartment `openshift`) > Create Bucket`
 
 - Upload the image to OCI Bucket:
-
-```bash
-oci os object put -bn openshift-infra --name images/${IMAGE_NAME} --file ${IMAGE_NAME}
+```sh
+oci os object put -bn $BUCKET_NAME --name images/${IMAGE_NAME} --file ${IMAGE_NAME}
 ```
 
 !!! tip "Helper"
@@ -249,55 +206,77 @@ oci os object put -bn openshift-infra --name images/${IMAGE_NAME} --file ${IMAGE
 
 - Import to the Instance Image service:
 
-```bash
+```sh
 STORAGE_NAMESPACE=$(oci os ns get | jq -r .data)
-oci compute image import from-object -bn openshift-infra --name images/${IMAGE_NAME} \
+oci compute image import from-object -bn $BUCKET_NAME --name images/${IMAGE_NAME} \
     --compartment-id $COMPARTMENT_ID_OPENSHIFT -ns $STORAGE_NAMESPACE \
     --display-name ${IMAGE_NAME} --launch-mode "PARAVIRTUALIZED" \
     --source-image-type "QCOW2"
 ```
-
 !!! tip "Helper"
     OCI CLI documentation for [`oci compute image import`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/compute/image/import/from-object.html)
 
     OCI CLI documentation for [`oci os ns get`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/os/ns/get.html)
 
-    OCI Console path: `Menu > Storage > Buckets > (Choose the Compartment `openshift`) > (Choose the Bucket `openshift-infra`) > Objects > Upload`
 
 ## Section 1. Create Infrastructure resources
 
 ### Identity
 
-Set the policies to allow access from Cloud Controller Manager workloadss,
-running on control planes nodes, to the OCI API of resources running
-in the compartment `openshift`.
+There are two methods to provide authentication to Cloud Controller Manager:
+- User
+- Instance Principals
 
-- Create Dynamic Group name `openshift-controlplanes` with the following rule:
+The steps described in this document uses instance principals.
 
-```bash
-$ echo "Any {instance.compartment.id = '$COMPARTMENT_ID_OPENSHIFT_CPL'}"
+Instance principals requires extra steps to grant permissions to the Instances to access
+the APIs. The steps below describes how to create the namespace tags, used in the
+Dynamic Group rule filtering only Control Plane nodes to take actions defined in the
+Compartment's Policy.
+
+Steps:
+
+- Create managed tags:
+
+```sh
+oci iam tag-namespace create \
+  --compartment-id "${COMPARTMENT_ID_OPENSHIFT}" \
+  --description "Cluster Name" \
+  --name "$CLUSTER_NAME"
+
+TAG_NAMESPACE_ID="$(oci iam tag-namespace list --compartment-id "${COMPARTMENT_ID_OPENSHIFT}" | jq -r .data[0].id)"
+oci iam tag create \
+  --description "Node Role" \
+  --name "role" \
+  --tag-namespace-id "$TAG_NAMESPACE_ID" \
+  --validator '{"validatorType":"ENUM","values":["master","worker"]}'
 ```
 
-!!! tip "Step to create Dynamic Group using OCI Console"
-    OCI Console path: `Menu > Identity & Security > Domains > (Choose the compartment [root]) > Select the Identity Domain, or select "Default" > Dynamic Groups > Create dynamic group`
+- Create Dynamic Group with name `demo-${CLUSTER_NAME}-controlplane` with the following rule:
 
-    - Name: `openshift-controlplanes`
-    - Description: `Group of OpenShift Control Plane instances`
-    - Rule 1: ** < Value of `echo` with compartment id > **
+```sh
+DYNAMIC_GROUP_NAME="${CLUSTER_NAME}-controlplane"
+oci iam dynamic-group create \
+  --name "${DYNAMIC_GROUP_NAME}" \
+  --description "Control Plane nodes for ${CLUSTER_NAME}" \
+  --matching-rule "Any {instance.compartment.id='$COMPARTMENT_ID_OPENSHIFT', tag.${CLUSTER_NAME}.role.value='master'}" \
+  --wait-for-state ACTIVE
+```
 
-- Create policies allowing the Dynamic Group `openshift-controlplanes`
-  access resources in the Compartment `openshift`:
+- Create policy allowing the Dynamic Group `$DYNAMIC_GROUP_NAME`
+  access resources in the cluster compartment (`$COMPARTMENT_NAME_OPENSHIFT`):
 
-```bash
-oci iam policy create --name openshift-oci-cloud-controller-manager \
+```sh
+POLICY_NAME="${CLUSTER_NAME}-cloud-controller-manager"
+oci iam policy create --name $POLICY_NAME \
     --compartment-id $COMPARTMENT_ID_OPENSHIFT \
-    --description "Policies to run OCI CCM in OpenShift" \
-    --statements '[
-"Allow dynamic-group openshift-controlplanes to manage volume-family in compartment openshift",
-"Allow dynamic-group openshift-controlplanes to manage instance-family in compartment openshift",
-"Allow dynamic-group openshift-controlplanes to manage security-lists in compartment openshift",
-"Allow dynamic-group openshift-controlplanes to use virtual-network-family in compartment openshift",
-"Allow dynamic-group openshift-controlplanes to manage load-balancers in compartment openshift"]'
+    --description "Allow Cloud Controller Manager in OpenShift access Cloud Resources" \
+    --statements "[
+\"Allow dynamic-group $DYNAMIC_GROUP_NAME to manage volume-family in compartment $COMPARTMENT_NAME_OPENSHIFT\",
+\"Allow dynamic-group $DYNAMIC_GROUP_NAME to manage instance-family in compartment $COMPARTMENT_NAME_OPENSHIFT\",
+\"Allow dynamic-group $DYNAMIC_GROUP_NAME to manage security-lists in compartment $COMPARTMENT_NAME_OPENSHIFT\",
+\"Allow dynamic-group $DYNAMIC_GROUP_NAME to use virtual-network-family in compartment $COMPARTMENT_NAME_OPENSHIFT\",
+\"Allow dynamic-group $DYNAMIC_GROUP_NAME to manage load-balancers in compartment $COMPARTMENT_NAME_OPENSHIFT\"]"
 ```
 
 !!! tip "Helper"
@@ -319,19 +298,21 @@ oci iam policy create --name openshift-oci-cloud-controller-manager \
 # -1) removing existing project/cluster setup: rm -rf ~/.ansible/okd-installer/clusters/$CLUSTER_NAME/
 # 0) Install ansible dependencies: https://ansible-collection-okd-installer-csfcfiew8-mtulio.vercel.app/guides/OCI/oci-prerequisites/
 # 1) Create the $VARS_FILE :
-CLUSTER_NAME=oci-ext00
+#CLUSTER_NAME=oci-ext00
 VARS_FILE=./vars-oci-ha_${CLUSTER_NAME}.yaml
 BASE_DOMAIN="splat-oci.devcluster.openshift.com"
-SSH_PUB_KEY_FILE="$HOME/.ssh/openshift-dev.pub"
-OCI_CONFIG_CLUSTER_REGION=us-sanjose-1
-OCI_COMPARTMENT_ID_DNS="${COMPARTMENT_ID_SPLAT}"
-COMPARTMENT_ID_OPENSHIFT="${COMPARTMENT_ID_OPENSHIFT}"
+SSH_PUB_KEY_FILE="${HOME}/.ssh/bundle.pub"
+PULL_SECRET_FILE="${HOME}/.openshift/pull-secret-latest.json"
+OCI_CLUSTER_REGION=us-sanjose-1
+# SPLAT>
+OCI_COMPARTMENT_ID_DNS="ocid1.compartment.oc1..aaaaaaaabfwx2ct2vckgbmvqybfjvz5pblv4ctjcfxmfhdfspyfojyxtaj6q"
+echo COMPARTMENT_ID_OPENSHIFT="${COMPARTMENT_ID_OPENSHIFT}"
 
 # https://ansible-collection-okd-installer-csfcfiew8-mtulio.vercel.app/guides/OCI/oci-install-ccm/
 cat <<EOF > ${VARS_FILE}
 provider: oci
 cluster_name: ${CLUSTER_NAME}
-config_cluster_region: ${OCI_CONFIG_CLUSTER_REGION}
+config_cluster_region: ${OCI_CLUSTER_REGION}
 config_featureset: TechPreviewNoUpgrade
 oci_compartment_id: ${COMPARTMENT_ID_OPENSHIFT}
 oci_compartment_id_dns: ${OCI_COMPARTMENT_ID_DNS}
@@ -376,6 +357,10 @@ Create the VCN and dependencies with the following configuration:
 | Nat GW | | -- | |
 | ... | ... | ... | ... |
 
+Steps:
+
+> TODO
+
 ### DNS
 
 >> WIP
@@ -391,6 +376,10 @@ DNS records for an API accessed from the internet:
 | `${CLUSTER_NAME}`.`${BASE_DOMAIN}` | api | Public IP Address or DNS for the Load Balancer |
 | `${CLUSTER_NAME}`.`${BASE_DOMAIN}` | api-int | Private IP Address or DNS for the Load Balancer |
 | `${CLUSTER_NAME}`.`${BASE_DOMAIN}` | *.apps | Public IP Address or DNS for the Load Balancer |
+
+Steps:
+
+> TODO
 
 ### Load Balancer
 
@@ -416,6 +405,10 @@ Listeners:
 | `${CLUSTER_NAME}-http` | TCP/80 | `${CLUSTER_NAME}-http` |
 | `${CLUSTER_NAME}-https` | TCP/443 | `${CLUSTER_NAME}-https` |
 
+Steps:
+
+> TODO
+
 ## Section 2. Preparing the installation
 
 This section describes how to setup the OpenShift customizing the manifests
@@ -426,16 +419,15 @@ used in the installation.
 Modify and export the variables used to build the `install-config.yaml` and
 the later steps:
 
-```bash
-export CLUSTER_NAME=oci-ext03
-export BASE_DOMAIN=splat-oci.devcluster.openshift.com
+```sh
+BASE_DOMAIN=splat-oci.devcluster.openshift.com
 
 #export INSTALL_DIR=./install-dir
 #> tmp path while using automation to create infra stacks (network, dns and LB)
-export INSTALL_DIR=${HOME}/.ansible/okd-installer/clusters/${CLUSTER_NAME}/
+INSTALL_DIR=${HOME}/.ansible/okd-installer/clusters/${CLUSTER_NAME}/
 
-export SSH_PUB_KEY_FILE="${HOME}/.ssh/bundle.pub"
-export PULL_SECRET_FILE="${HOME}/.openshift/pull-secret-latest.json"
+SSH_PUB_KEY_FILE="${HOME}/.ssh/bundle.pub"
+PULL_SECRET_FILE="${HOME}/.openshift/pull-secret-latest.json"
 
 # Create the install directory
 mkdir -p $INSTALL_DIR
@@ -443,9 +435,9 @@ mkdir -p $INSTALL_DIR
 
 #### Create install-config.yaml
 
-Create the `install-config.yaml` setting the Platform type to `external`:
+Create the `install-config.yaml` setting the platform type to `external`:
 
-```bash
+```sh
 cat <<EOF > ${INSTALL_DIR}/install-config.yaml
 apiVersion: v1
 baseDomain: ${BASE_DOMAIN}
@@ -464,7 +456,7 @@ EOF
 
 ### Create manifests
 
-```bash
+```sh
 ./openshift-install create manifests --dir $INSTALL_DIR
 ```
 
@@ -474,9 +466,11 @@ The steps in this section describes how to customize the OpenShift installation
 providing the Cloud Controller Manager manifests to be added in the bootstrap process.
 
 !!! warning "Info"
-    This guide is based in the OCI CCM v1.25.0. You must read the
+    This guide is based in the OCI CCM v1.26.0. You must read the
     [project documentation](https://github.com/oracle/oci-cloud-controller-manager)
     for more information.
+
+Steps:
 
 - Create the namespace manifest:
 
@@ -487,8 +481,9 @@ providing the Cloud Controller Manager manifests to be added in the bootstrap pr
 
     See [the documentation](https://docs.openshift.com/container-platform/4.13/applications/projects/working-with-projects.html) for more information.
 
-```bash
-export OCI_CCM_NAMESPACE=oci-cloud-controller-manager
+
+```sh
+OCI_CCM_NAMESPACE=oci-cloud-controller-manager
 
 cat <<EOF > ${INSTALL_DIR}/manifests/oci-00-ccm-namespace.yaml
 apiVersion: v1
@@ -512,43 +507,43 @@ EOF
     - The Pod Admission Security must be reviewed aiming to use other than `privileged`
     - Set [critical pod annotation](https://kubernetes.io/docs/tasks/administer-cluster/guaranteed-scheduling-critical-addon-pods/#rescheduler-guaranteed-scheduling-of-critical-add-ons) in this namespace.
 
-- Create the OCI cloud-config secret:
 
-```bash
-export OCI_CONFIG_CLUSTER_REGION=us-sanjose-1
-export OCI_CCM_COMPARTMENT_ID=$COMPARTMENT_ID_OPENSHIFT
+- Export the variables used to create the OCI CCM Cloud Config:
+
+```sh
+OCI_CLUSTER_REGION=us-sanjose-1
 
 ## Discover VCN ID
-export OCI_VCN_ID=$(oci network vcn list --compartment-id $OCI_CCM_COMPARTMENT_ID \
+OCI_VCN_ID=$(oci network vcn list --compartment-id $COMPARTMENT_ID_OPENSHIFT \
   | jq -r .data[0].id)
 
 ## Discover public Subnet ID
-export OCI_LB_SUBNET_ID=$(oci network subnet list --compartment-id $OCI_CCM_COMPARTMENT_ID \
+SUBNET_ID_PUBLIC=$(oci network subnet list --compartment-id $COMPARTMENT_ID_OPENSHIFT \
   | jq -r '.data[] | select(.["display-name"] | endswith("public")).id')
 
-# Creating the file and duplicating it in the secret to prevent CCM Error in the logs.
-cat <<EOF > ./cloud-provider.yaml
+# Review the defined vars
+cat <<EOF>/dev/stdout
+OCI_CLUSTER_REGION=$OCI_CLUSTER_REGION
+OCI_VCN_ID=$OCI_VCN_ID
+SUBNET_ID_PUBLIC=$SUBNET_ID_PUBLIC
+EOF
+```
+
+- Create the OCI CCM configuration as a secret stored in install directory:
+
+```sh
+cat <<EOF > ./oci-secret-cloud-provider.yaml
 auth:
-  region: $OCI_CONFIG_CLUSTER_REGION
+  region: $OCI_CLUSTER_REGION
 useInstancePrincipals: true
-
-compartment: $OCI_CCM_COMPARTMENT_ID
+compartment: $COMPARTMENT_ID_OPENSHIFT
 vcn: $OCI_VCN_ID
-
 loadBalancer:
   securityListManagementMode: None
-  subnet1: $OCI_LB_SUBNET_ID
-
-# Optional rate limit controls for accessing OCI API
-rateLimiter:
-  rateLimitQPSRead: 20.0
-  rateLimitBucketRead: 5
-  rateLimitQPSWrite: 20.0
-  rateLimitBucketWrite: 5
+  subnet1: $SUBNET_ID_PUBLIC
 EOF
 
-# Create the secret manifest
-cat <<EOF1 > ${INSTALL_DIR}/manifests/oci-01-ccm-00-secret.yaml
+cat <<EOF > ${INSTALL_DIR}/manifests/oci-01-ccm-00-secret.yaml
 ---
 apiVersion: v1
 kind: Secret
@@ -556,8 +551,8 @@ metadata:
   name: oci-cloud-controller-manager
   namespace: $OCI_CCM_NAMESPACE
 data:
-  cloud-provider.yaml: $(base64 -w0 < ./cloud-provider.yaml)
-EOF1
+  cloud-provider.yaml: $(base64 -w0 < ./oci-secret-cloud-provider.yaml)
+EOF
 ```
 
 <!-- !!! danger "Bug"
@@ -567,7 +562,6 @@ EOF1
     ERROR   oci/ccm.go:122  Metrics collection could not be enabled {"component": "cloud-controller-manager", "error": "failed to load configuration file at path /etc/oci/config.yaml: open /etc/oci/config.yaml: no such file or directory"
     ```
 
-
 !!! warning "Question"
     - Is it possible to use NSG instead of SecList in Load Balancer?
 -->
@@ -575,8 +569,8 @@ EOF1
 - Download manifests from [OCI CCM's Github](https://github.com/oracle/oci-cloud-controller-manager)
   and save it in the directory `${INSTALL_DIR}/manifests`:
 
-```bash
-export CCM_RELEASE=v1.26.0
+```sh
+CCM_RELEASE=v1.26.0
 
 wget https://github.com/oracle/oci-cloud-controller-manager/releases/download/${CCM_RELEASE}/oci-cloud-controller-manager-rbac.yaml -O oci-cloud-controller-manager-rbac.yaml
 
@@ -585,13 +579,13 @@ wget  https://github.com/oracle/oci-cloud-controller-manager/releases/download/$
 
 - Patch the RBAC file setting the correct namespace in the `ServiceAccount`:
 
-```bash
+```sh
 ./yq ". | select(.kind==\"ServiceAccount\").metadata.namespace=\"$OCI_CCM_NAMESPACE\"" oci-cloud-controller-manager-rbac.yaml > ./oci-cloud-controller-manager-rbac_patched.yaml
 ```
 
 - Patch the RBAC file setting the correct namespace in the `ServiceAccount`:
 
-```bash
+```sh
 cat << EOF > ./oci-ccm-rbac_patch_crb-subject.yaml
 - kind: ServiceAccount
   name: cloud-controller-manager
@@ -603,16 +597,17 @@ EOF
 
 - Split the RBAC manifest file:
 
-```bash
+```sh
 ./yq -s '"./oci-01-ccm-01-rbac_" + $index' ./oci-cloud-controller-manager-rbac_patched.yaml &&\
 mv -v ./oci-01-ccm-01-rbac_*.yml ${INSTALL_DIR}/manifests/
 ```
 
 - Patch the CCM DaemonSet manifest setting the namespace, append the tolerations,
-  mount CA, and add env vars for the kube API URL used in OpenShift:
+  and add env vars for the kube API URL used in OpenShift:
 
-```bash
-# Create the pod template patch
+<!-- TODO: merge both paths into yq expressions -->
+
+```sh
 cat <<EOF > ./oci-cloud-controller-manager-ds_patch1.yaml
 metadata:
   namespace: $OCI_CCM_NAMESPACE
@@ -625,7 +620,7 @@ spec:
           effect: NoSchedule
 EOF
 
-# Create the containers' patch (TODO merge both patches)
+# Create the containers' env patch
 cat <<EOF > ./oci-cloud-controller-manager-ds_patch2.yaml
 spec:
   template:
@@ -650,19 +645,19 @@ spec:
             value: "6443"
 EOF
 
-# Merge required objects for pod template
+# Merge required objects for pod's template spec
 ./yq eval-all '. as $item ireduce ({}; . *+ $item)' oci-cloud-controller-manager.yaml oci-cloud-controller-manager-ds_patch1.yaml > oci-cloud-controller-manager-ds_patched1.yaml
 
-# Merge required objects for containers
+# Merge required objects for pod's containers spec
 ./yq eval-all '.spec.template.spec.containers[] as $item ireduce ({}; . *+ $item)' oci-cloud-controller-manager-ds_patched1.yaml ./oci-cloud-controller-manager-ds_patch2.yaml > ./oci-cloud-controller-manager-ds_patched2.yaml
 
-# merge patched files
+# merge patches to ${INSTALL_DIR}/manifests/oci-01-ccm-02-daemonset.yaml
 ./yq eval-all '.spec.template.spec.containers[] *= load("./oci-cloud-controller-manager-ds_patched2.yaml")' oci-cloud-controller-manager-ds_patched1.yaml > ${INSTALL_DIR}/manifests/oci-01-ccm-02-daemonset.yaml
 ```
 
 The following CCM manifests files must be created in the installation `manifests/` directory:
 
-```bash
+```sh
 $ tree $INSTALL_DIR/manifests/
 [...]
 ├── oci-00-namespace.yaml
@@ -676,19 +671,19 @@ $ tree $INSTALL_DIR/manifests/
 
 #### Create custom manifests for Kubelet
 
-The `providerID`, a Kubelet configuration, must be set, sets the unique ID of the instance that an external provider (i.e. cloudprovider) can use to identify a specific node.
-
-This section describes the steps to create MachineConfig for kubeket to set
-the cloud provider ID of the node that an external provider used to identify a specific node.
+The Kubelet parameter `providerID` is the unique identifier of the instance in the
+provider. It is set before the node is initialized by CCM using a custom MachineConfig.
 
 The Provider ID must be set dynamically for each node. The steps below describes
-how to create a MachineConfig manifest to setup a systemd unit to create a kubelet
+how to create a MachineConfig object to setup a systemd unit to create a kubelet
 configuration discoverying the Provider ID in OCI by querying the
 [Instance Metadata Service (IMDS)](https://docs.oracle.com/en-us/iaas/Content/Compute/Tasks/gettingmetadata.htm).
 
+Steps:
+
 - Create the butane files for master and worker configurations:
 
-```bash
+```sh
 function create_machineconfig_kubelet() {
     local node_role=$1
     cat << EOF > ./mc-kubelet-$node_role.bu
@@ -746,7 +741,7 @@ create_machineconfig_kubelet "worker"
 
 - Process the butane files to `MachineConfig` objects:
 
-```bash
+```sh
 function process_butane() {
     local src_file=$1; shift
     local dest_file=$1
@@ -760,7 +755,7 @@ process_butane "./mc-kubelet-worker.bu" "${INSTALL_DIR}/openshift/99_openshift-m
 
 The MachineConfig files must exists:
 
-```bash
+```sh
 ls ${INSTALL_DIR}/openshift/99_openshift-machineconfig_00-*-kubelet-providerid.yaml
 ```
 
@@ -772,7 +767,7 @@ Once the manifests are placed, you can create the cluster ignition configuration
 ./openshift-install create ignition-configs --dir $INSTALL_DIR
 ~~~
 
-The ignition files must be generated in the install directory (files with externsion `*.ign`):
+The ignition files must be generated in the install directory (files with extension `*.ign`):
 
 ```text
 $ tree $INSTALL_DIR
@@ -786,10 +781,16 @@ $ tree $INSTALL_DIR
 └── worker.ign
 ```
 
+The `bootstrap.ign` must be uploaded to an object storage the size is higher than
+allowed to the cloud providers. The temporarily URL will be generated to allow
+the bootstrap node access it in the first boot.
+
+Steps:
+
 - Upload the `bootstrap.ign` to the infrastructure bucket
 
-```bash
-oci os object put -bn openshift-infra --name bootstrap-${CLUSTER_NAME}.ign \
+```sh
+oci os object put -bn $BUCKET_NAME --name bootstrap-${CLUSTER_NAME}.ign \
     --file $INSTALL_DIR/bootstrap.ign
 ```
 
@@ -799,10 +800,10 @@ oci os object put -bn openshift-infra --name bootstrap-${CLUSTER_NAME}.ign \
 
 - Generate the signed URL for the bootstrap object to be used in the user-data:
 
-```bash
+```sh
 EXPIRES_TIME=$(date -d '+1 hour' --rfc-3339=seconds)
-USER_DATA_URL=$(oci os preauth-request create --name bootstrap-${CLUSTER_NAME} \
-    -bn openshift-infra -on bootstrap-${CLUSTER_NAME}.ign \
+IGN_BOOTSTRAP_URL=$(oci os preauth-request create --name bootstrap-${CLUSTER_NAME} \
+    -bn $BUCKET_NAME -on bootstrap-${CLUSTER_NAME}.ign \
     --access-type ObjectRead  --time-expires "$EXPIRES_TIME" \
     | jq -r '.data["full-path"]')
 ```
@@ -810,7 +811,7 @@ USER_DATA_URL=$(oci os preauth-request create --name bootstrap-${CLUSTER_NAME} \
 !!! tip "Helper"
     OCI CLI documentation for [`oci os preauth-request create`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.0/oci_cli_docs/cmdref/os/preauth-request/create.html)
 
-The ignition URL for the Bootstrap node must be available in the `$USER_DATA_URL`.
+The ignition URL for the Bootstrap node must be available in the `$IGN_BOOTSTRAP_URL`.
 
 !!! warning "Attention"
     Bucket Object URL will expires in one hour, if you are planning to create
@@ -822,43 +823,59 @@ The ignition URL for the Bootstrap node must be available in the `$USER_DATA_URL
 
 ## Section 3. Create the cluster
 
+This section describe how to create the compute nodes and dependencies.
+
 ### Cluster nodes
 
-| Compartment | Node Name  | User Data |
-| -- | -- | -- |
-| [parent]/openshift/controlplane | bootstrap | `${PWD}/user-data-bootstrap.json` |
-| [parent]/openshift/controlplane | control planes nodes (pool) | `${INSTALL_DIR}/master.json` |
-| [parent]/openshift/compute | compute nodes (pool) | `${INSTALL_DIR}/worker.json` |
+Every node role uses different ignition files. The following table shows which
+ignition file to use by node role:
 
-Export the required variables to be used on instance creation:
+| Node Name  | Ignition file | Fetch source |
+| -- | -- | -- |
+| bootstrap | `${PWD}/user-data-bootstrap.json` | Preauthenticated URL |
+| control planes nodes (pool) | `${INSTALL_DIR}/master.json` | Internal Load Balancer (MCS) |
+| compute nodes (pool) | `${INSTALL_DIR}/worker.json` | Internal Load Balancer (MCS) |
+
+Check if the required variables to be used on instance creation:
 
 - `IMAGE_ID`: Custom RHCOS image previously uploaded.
 - `SUBNET_ID_PUBLIC`: Public regional subnet used in bootstrap.
 - `SUBNET_ID_PRIVATE`: Private regional subnet used to create control plane and compute nodes.
 - `NSG_ID_CPL`: Network Security Group ID used in Control Planes
 
-```bash
+```sh
 # Gather the Custom Compute image for RHCOS
-export IMAGE_ID=$(oci compute image list --compartment-id $COMPARTMENT_ID_OPENSHIFT \
+IMAGE_ID=$(oci compute image list --compartment-id $COMPARTMENT_ID_OPENSHIFT \
   --display-name $IMAGE_NAME | jq -r '.data[0].id')
 
-# Gather the subnet IDs
-export SUBNET_ID_PUBLIC=$(oci network subnet list --compartment-id $OCI_CCM_COMPARTMENT_ID \
+# Gather subnet IDs
+SUBNET_ID_PUBLIC=$(oci network subnet list --compartment-id $COMPARTMENT_ID_OPENSHIFT \
   | jq -r '.data[] | select(.["display-name"] | endswith("public")).id')
-export SUBNET_ID_PRIVATE=$(oci network subnet list --compartment-id $OCI_CCM_COMPARTMENT_ID \
+SUBNET_ID_PRIVATE=$(oci network subnet list --compartment-id $COMPARTMENT_ID_OPENSHIFT \
   | jq -r '.data[] | select(.["display-name"] | endswith("private")).id')
 
 # Gather the Network Security group for control plane
-export NSG_ID_CPL=$(oci network nsg list -c $COMPARTMENT_ID_OPENSHIFT \
+NSG_ID_CPL=$(oci network nsg list -c $COMPARTMENT_ID_OPENSHIFT \
   | jq -r '.data[] | select(.["display-name"] | endswith("controlplane")).id')
+
+NSG_ID_CMP=$(oci network nsg list -c $COMPARTMENT_ID_OPENSHIFT \
+  | jq -r '.data[] | select(.["display-name"] | endswith("compute")).id')
+
+# Check required vars has values
+cat <<EOF>/dev/stdout
+COMPARTMENT_ID_OPENSHIFT=$COMPARTMENT_ID_OPENSHIFT
+IMAGE_ID=$IMAGE_ID
+SUBNET_ID_PUBLIC=$SUBNET_ID_PUBLIC
+SUBNET_ID_PRIVATE=$SUBNET_ID_PRIVATE
+NSG_ID_CPL=$NSG_ID_CPL
+IGN_BOOTSTRAP_URL=$IGN_BOOTSTRAP_URL
+EOF
 ```
 
-!!! tip "Helper"
-    OCI CLI documentation for [`oci compute image list`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/compute/image/list.html)
-
-    OCI CLI documentation for [`oci network subnet list`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/network/subnet/list.html)
-
-    OCI CLI documentation for [`oci network nsg list`](#)
+!!! tip "Helper - OCI CLI documentation"
+    - [`oci compute image list`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/compute/image/list.html)
+    - [`oci network subnet list`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/network/subnet/list.html)
+    - [`oci network nsg list`](#)
 
 #### Bootstrap
 
@@ -871,15 +888,19 @@ temporary Bucket Object URL where the full ignition file is stored.
 Once the bootstrap instance is created, it must be attached to the Load Balancer in the
 Backends for Kubernetes API Server and Machine Config Server.
 
+Steps:
+
+
+
 - Generate the user-data:
 
-```bash
+```sh
 cat <<EOF > user-data-bootstrap.json
 {
   "ignition": {
     "config": {
       "replace": {
-        "source": "${USER_DATA_URL}"
+        "source": "${IGN_BOOTSTRAP_URL}"
       }
     },
     "version": "3.1.0"
@@ -890,17 +911,16 @@ EOF
 
 Create the Instance for bootstrap with the following configuration:
 
-```bash
+```sh
 AVAILABILITY_DOMAIN="gzqB:US-SANJOSE-1-AD-1"
 INSTANCE_SHAPE="VM.Standard.E4.Flex"
 
-# Launch
 oci compute instance launch \
     --hostname-label "bootstrap" \
     --display-name "bootstrap" \
     --availability-domain "$AVAILABILITY_DOMAIN" \
     --fault-domain "FAULT-DOMAIN-1" \
-    --compartment-id $COMPARTMENT_ID_OPENSHIFT_CPL \
+    --compartment-id $COMPARTMENT_ID_OPENSHIFT \
     --subnet-id $SUBNET_ID_PUBLIC \
     --nsg-ids "[\"$NSG_ID_CPL\"]" \
     --shape "$INSTANCE_SHAPE" \
@@ -908,41 +928,43 @@ oci compute instance launch \
     --source-details "{\"bootVolumeSizeInGBs\":120,\"bootVolumeVpusPerGB\":60,\"imageId\":\"${IMAGE_ID}\",\"sourceType\":\"image\"}" \
     --agent-config '{"areAllPluginsDisabled": true}' \
     --assign-public-ip True \
-    --user-data-file "./user-data-bootstrap.json"
+    --user-data-file "./user-data-bootstrap.json" \
+    --defined-tags "{\"$CLUSTER_NAME\":{\"role\":\"master\"}}"
 ```
 
-!!! tip "Helper"
-    OCI CLI documentation for [`oci compute instance launch`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/compute/instance/launch.html)
+!!! tip "Helper - OCI CLI documentation"
+    - [`oci compute instance launch`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/compute/instance/launch.html)
+    - [`oci compute shape list`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/compute/shape/list.html)
 
-    OCI CLI documentation for [`oci compute shape list`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/compute/shape/list.html)
-
-!!! tip "Warning"
+!!! tip "Follow the bootstrap process"
     You can SSH to the node and follow the bootstrap process:
     `journalctl -b -f -u release-image.service -u bootkube.service`
 
 
 - Discover the Load Balancer and Bootstrap IDs:
 
-```bash
+```sh
 # Lookup the Network Load Balancer ending with name 'nlb'
 NLB_ID=$(oci nlb network-load-balancer list --compartment-id $COMPARTMENT_ID_OPENSHIFT | jq -r ".data.items[] | select(.[\"display-name\"] | endswith(\"-nlb\")).id")
+# ## tmp OCI_CCM_COMPARTMENT_ID_SPLAT
+# NLB_ID=$(oci nlb network-load-balancer list --compartment-id $OCI_CCM_COMPARTMENT_ID_SPLAT | jq -r ".data.items[] | select(.[\"display-name\"] | endswith(\"-nlb\")).id")
+
 BES_API_NAME=$(oci nlb backend-set list --network-load-balancer-id $NLB_ID | jq -r '.data.items[] | select(.name | endswith("api")).name')
 BES_MCS_NAME=$(oci nlb backend-set list --network-load-balancer-id $NLB_ID | jq -r '.data.items[] | select(.name | endswith("mcs")).name')
 
-INSTANCE_ID_BOOTSTRAP=$(oci compute instance list  -c $COMPARTMENT_ID_OPENSHIFT_CPL | jq -r '.data[] | select((.["display-name"]=="bootstrap") and (.["lifecycle-state"]=="RUNNING")).id')
+INSTANCE_ID_BOOTSTRAP=$(oci compute instance list  -c $COMPARTMENT_ID_OPENSHIFT | jq -r '.data[] | select((.["display-name"]=="bootstrap") and (.["lifecycle-state"]=="RUNNING")).id')
 
 test -z $INSTANCE_ID_BOOTSTRAP && echo "ERR: Bootstrap Instance ID not found=[$INSTANCE_ID_BOOTSTRAP]. Try again."
 ```
 
-!!! tip "Helper"
-    [TODO] OCI CLI documentation for:<br>
-    - [`oci nlb network-load-balancer list`]()<br>
-    - [`oci nlb backend-set list`]()<br>
-    - [`oci compute instance list`]()<br>
+!!! tip "Helper - OCI CLI documentation"
+    - [`oci nlb network-load-balancer list`]()
+    - [`oci nlb backend-set list`]()
+    - [`oci compute instance list`]()
 
 
 - Add the bootstrap to the Load Balancer's backend set API
-```bash
+```sh
 # oci nlb backend-set update --generate-param-json-input backends
 cat <<EOF > ./nlb-bset-backends-api.json
 [
@@ -964,12 +986,12 @@ oci nlb backend-set update --wait-for-state SUCCEEDED \
   --backends file://nlb-bset-backends-api.json
 ```
 
-!!! tip "Helper"
-    OCI CLI documentation for [`oci nlb backend-set update`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/nlb/backend-set/update.html)
+!!! tip "Helper - OCI CLI documentation"
+    - [`oci nlb backend-set update`](https://docs.oracle.com/en-us/iaas/tools/oci-cli/3.29.1/oci_cli_docs/cmdref/nlb/backend-set/update.html)
 
 - Add the bootstrap to the Load Balancer's backend set MCS[Machine Config Server]:
 
-```bash
+```sh
 cat <<EOF > ./nlb-bset-backends-mcs.json
 [
   {
@@ -983,7 +1005,6 @@ cat <<EOF > ./nlb-bset-backends-mcs.json
 ]
 EOF
 
-# Update MCS Backend Set
 oci nlb backend-set update --wait-for-state SUCCEEDED \
   --backend-set-name $BES_MCS_NAME \
   --network-load-balancer-id $NLB_ID \
@@ -998,7 +1019,8 @@ to the desired listeners: API and MCS.
 
 - Creating the Instance Configuration required by Instance Pool:
 
-```bash
+```sh
+INSTANCE_CONFIG_CONTROLPLANE="${CLUSTER_NAME}-controlplane"
 # To generate all the options:
 # oci compute-management instance-configuration create --generate-param-json-input instance-details
 cat <<EOF > ./instance-config-details-controlplanes.json
@@ -1006,12 +1028,17 @@ cat <<EOF > ./instance-config-details-controlplanes.json
   "instanceType": "compute",
   "launchDetails": {
     "agentConfig": {"areAllPluginsDisabled": true},
-    "compartmentId": "$COMPARTMENT_ID_OPENSHIFT_CPL",
+    "compartmentId": "$COMPARTMENT_ID_OPENSHIFT",
     "createVnicDetails": {
       "assignPrivateDnsRecord": true,
       "assignPublicIp": false,
       "nsgIds": ["$NSG_ID_CPL"],
       "subnetId": "$SUBNET_ID_PRIVATE"
+    },
+    "definedTags": {
+      "$CLUSTER_NAME": {
+        "role": "master"
+      }
     },
     "displayName": "${CLUSTER_NAME}-controlplane",
     "launchMode": "PARAVIRTUALIZED",
@@ -1024,15 +1051,18 @@ cat <<EOF > ./instance-config-details-controlplanes.json
 EOF
 
 oci compute-management instance-configuration create \
-  --display-name "openshift-controlplane-config" \
-  --compartment-id $COMPARTMENT_ID_OPENSHIFT_CPL \
+  --display-name "$INSTANCE_CONFIG_CONTROLPLANE" \
+  --compartment-id $COMPARTMENT_ID_OPENSHIFT \
   --instance-details file://instance-config-details-controlplanes.json
 ```
 
 - Creating the Instance Pool:
 
-```bash
-INSTANCE_CONFIG_ID_CPL=$(oci compute-management instance-configuration list --compartment-id $COMPARTMENT_ID_OPENSHIFT_CPL | jq -r '.data[] | select(.["display-name"] | startswith("openshift-controlplane")).id')
+```sh
+INSTANCE_POOL_CONTROLPLANE="${CLUSTER_NAME}-controlplane"
+INSTANCE_CONFIG_ID_CPL=$(oci compute-management instance-configuration list \
+  --compartment-id $COMPARTMENT_ID_OPENSHIFT \
+  | jq -r ".data[] | select(.[\"display-name\"] | startswith(\"$INSTANCE_CONFIG_CONTROLPLANE\")).id")
 
 #
 # oci compute-management instance-pool create --generate-param-json-input load-balancers
@@ -1064,40 +1094,40 @@ cat <<EOF > ./instance-pool-placement.json
 ]
 EOF
 
-#
 oci compute-management instance-pool create \
-  --compartment-id $COMPARTMENT_ID_OPENSHIFT_CPL \
+  --compartment-id $COMPARTMENT_ID_OPENSHIFT \
   --instance-configuration-id "$INSTANCE_CONFIG_ID_CPL" \
   --size 0 \
-  --display-name "ocp-controlplane" \
+  --display-name "$INSTANCE_POOL_CONTROLPLANE" \
   --placement-configurations "file://instance-pool-placement.json" \
   --load-balancers file://instance-pool-loadbalancers-cpl.json
 ```
 
-!!! tip "Helper TODO"
-    OCI CLI documentation for [`oci compute-management instance-pool create`]()
+!!! tip "Helper - OCI CLI documentation (TODO)"
+    - [`oci compute-management instance-pool create`]()
 
 - Scale up (alternatively the `--size` can be adjusted when creating the Instance Pool):
 
-```bash
+```sh
 INSTANCE_POOL_ID_CPL=$(oci compute-management instance-pool list \
-    --compartment-id  $COMPARTMENT_ID_OPENSHIFT_CPL \
-    | jq -r '.data[] | select(
-        (.["display-name"]=="ocp-controlplane") and
-        (.["lifecycle-state"]=="RUNNING")
-    ).id')
+    --compartment-id  $COMPARTMENT_ID_OPENSHIFT \
+    | jq -r ".data[] | select(
+        (.[\"display-name\"]==\"$INSTANCE_POOL_CONTROLPLANE\") and
+        (.[\"lifecycle-state\"]==\"RUNNING\")
+    ).id")
 
-oci compute-management instance-pool update --instance-pool-id $INSTANCE_POOL_ID_CPL --size 1
+oci compute-management instance-pool update --instance-pool-id $INSTANCE_POOL_ID_CPL --size 3
 ```
-!!! tip "Helper TODO"
-    OCI CLI documentation for [`oci compute-management instance-pool update `]()
+
+!!! tip "Helper - OCI CLI documentation (TODO)"
+    - [`oci compute-management instance-pool update `]()
 
 #### Compute/workers
 
 - Creating the Instance Configuration
 
-```bash
-export NSG_ID_CMP=$(oci network nsg list -c $COMPARTMENT_ID_OPENSHIFT | jq -r '.data[] | select(.["display-name"] | endswith("compute")).id')
+```sh
+INSTANCE_CONFIG_COMPUTE="${CLUSTER_NAME}-compute"
 
 # oci compute-management instance-configuration create --generate-param-json-input instance-details
 cat <<EOF > ./instance-config-details-compute.json
@@ -1105,14 +1135,19 @@ cat <<EOF > ./instance-config-details-compute.json
   "instanceType": "compute",
   "launchDetails": {
     "agentConfig": {"areAllPluginsDisabled": true},
-    "compartmentId": "$COMPARTMENT_ID_OPENSHIFT_CMP",
+    "compartmentId": "$COMPARTMENT_ID_OPENSHIFT",
     "createVnicDetails": {
       "assignPrivateDnsRecord": true,
       "assignPublicIp": false,
       "nsgIds": ["$NSG_ID_CMP"],
       "subnetId": "$SUBNET_ID_PRIVATE"
     },
-    "displayName": "${CLUSTER_NAME}-compute",
+    "definedTags": {
+      "$CLUSTER_NAME": {
+        "role": "worker"
+      }
+    },
+    "displayName": "${CLUSTER_NAME}-worker",
     "launchMode": "PARAVIRTUALIZED",
     "metadata": {"user_data": "$(base64 -w0 < $INSTALL_DIR/worker.ign)"},
     "shape": "$INSTANCE_SHAPE",
@@ -1123,18 +1158,23 @@ cat <<EOF > ./instance-config-details-compute.json
 EOF
 
 oci compute-management instance-configuration create \
-  --display-name "openshift-compute-config" \
-  --compartment-id $COMPARTMENT_ID_OPENSHIFT_CMP \
+  --display-name "$INSTANCE_CONFIG_COMPUTE" \
+  --compartment-id $COMPARTMENT_ID_OPENSHIFT \
   --instance-details file://instance-config-details-compute.json
 ```
 
 - Creating the Instance Pool
 
-```bash
-BES_HTTP_NAME=$(oci nlb backend-set list --network-load-balancer-id $NLB_ID | jq -r '.data.items[] | select(.name | endswith("http")).name')
-BES_HTTPS_NAME=$(oci nlb backend-set list --network-load-balancer-id $NLB_ID | jq -r '.data.items[] | select(.name | endswith("https")).name')
+```sh
+INSTANCE_POOL_COMPUTE="${CLUSTER_NAME}-compute"
+INSTANCE_CONFIG_ID_CMP=$(oci compute-management instance-configuration list \
+  --compartment-id $COMPARTMENT_ID_OPENSHIFT \
+  | jq -r ".data[] | select(.[\"display-name\"] | startswith(\"$INSTANCE_CONFIG_COMPUTE\")).id")
 
-INSTANCE_CONFIG_ID_CMP=$(oci compute-management instance-configuration list --compartment-id $COMPARTMENT_ID_OPENSHIFT_CMP | jq -r '.data[] | select(.["display-name"] | startswith("openshift-compute")).id')
+BES_HTTP_NAME=$(oci nlb backend-set list --network-load-balancer-id $NLB_ID \
+  | jq -r '.data.items[] | select(.name | endswith("http")).name')
+BES_HTTPS_NAME=$(oci nlb backend-set list --network-load-balancer-id $NLB_ID \
+  | jq -r '.data.items[] | select(.name | endswith("https")).name')
 
 #
 # oci compute-management instance-pool create --generate-param-json-input load-balancers
@@ -1155,34 +1195,46 @@ cat <<EOF > ./instance-pool-loadbalancers-cmp.json
 ]
 EOF
 
-#
 oci compute-management instance-pool create \
-  --compartment-id $COMPARTMENT_ID_OPENSHIFT_CMP \
+  --compartment-id $COMPARTMENT_ID_OPENSHIFT \
   --instance-configuration-id "$INSTANCE_CONFIG_ID_CMP" \
   --size 0 \
-  --display-name "ocp-compute" \
+  --display-name "$INSTANCE_POOL_COMPUTE" \
   --placement-configurations "[{\"availabilityDomain\":\"$AVAILABILITY_DOMAIN\",\"faultDomains\":[\"FAULT-DOMAIN-1\",\"FAULT-DOMAIN-2\",\"FAULT-DOMAIN-3\"],\"primarySubnetId\":\"$SUBNET_ID_PRIVATE\"}]" \
   --load-balancers file://instance-pool-loadbalancers-cmp.json
 ```
 
 - Scale up
 
-```bash
+```sh
 INSTANCE_POOL_ID_CMP=$(oci compute-management instance-pool list \
-    --compartment-id  $COMPARTMENT_ID_OPENSHIFT_CMP \
-    | jq -r '.data[] | select(
-        (.["display-name"]=="ocp-compute") and
-        (.["lifecycle-state"]=="RUNNING")
-    ).id')
+    --compartment-id  $COMPARTMENT_ID_OPENSHIFT \
+    | jq -r ".data[] | select(
+        (.[\"display-name\"]==\"$INSTANCE_POOL_COMPUTE\") and
+        (.[\"lifecycle-state\"]==\"RUNNING\")
+    ).id")
 
 oci compute-management instance-pool update --instance-pool-id $INSTANCE_POOL_ID_CMP --size 2
 ```
+
+##### Approve certificates
+
+Once the instances is created by the provider and ignitions loaded, the certification signing requests (CSR's) must be in pending condition.
+
+Check the pending certificates: `oc get csr -w`, then approve those by
+running:
+
+```sh
+oc adm certificate approve $(oc get csr  -o json |jq -r '.items[] | select(.status.certificate == null).metadata.name')
+```
+
+Observe the nodes joining in the cluster by running: `oc get nodes -w`.
 
 ### Review the installation
 
 Export the kubeconfig
 
-```bash
+```sh
 export KUBECONFIG=$INSTALL_DIR/auth/kubeconfig
 ```
 
@@ -1190,40 +1242,199 @@ export KUBECONFIG=$INSTALL_DIR/auth/kubeconfig
 
 - Check if the nodes have been initialized
 
-```bash
+```sh
 oc get nodes
 ```
 
 - Check if the controllers are running for each master:
 
-```bash
-oc get all -n oci-ccm
+```sh
+oc get all -n oci-cloud-controller-manager
 ```
 
 #### Wait for bootstrap complete
 
-- Wait for bootstrap complete
-```bash
+Check if you can remove the bootstrap instance when the Control Plane
+nodes have been up and running correctly. You can check by running
+the following command:
+
+```sh
 ./openshift-install --dir $INSTALL_DIR wait-for bootstrap-complete
 ```
 
-You can delete the bootstrap instance (or use it as bastion node until
-the instlalation has been completed).
-
-#### Approve certificates
-
-```bash
-oc adm certificate approve $(oc get csr  -o json |jq -r '.items[] | select(.status.certificate == null).metadata.name')
+Example output:
+```text
+INFO It is now safe to remove the bootstrap resources 
+INFO Time elapsed: 1s   
 ```
 
 #### Check installation complete
 
-```bash
-watch -n5 oc get clusteroperators
+It is also possible to wait for the installation to complete by using the
+`openshift-install` binary:
 
+```sh
 ./openshift-install --dir $INSTALL_DIR wait-for install-complete
 ```
 
+Example output:
+
+```text
+$ ./openshift-install --dir $INSTALL_DIR wait-for install-complete
+INFO Waiting up to 40m0s (until 6:17PM -03) for the cluster at https://api.oci-ext00.mydomain.com:6443 to initialize... 
+INFO Checking to see if there is a route at openshift-console/console... 
+INFO Install complete!                            
+INFO To access the cluster as the system:admin user when using 'oc', run 'export KUBECONFIG=/home/me/oci/oci-ext00/auth/kubeconfig' 
+INFO Access the OpenShift web-console here: https://console-openshift-console.apps.oci-ext00.mydomain 
+INFO Login to the console with user: "kubeadmin", and password: "[super secret]" 
+INFO Time elapsed: 2s                             
+```
+
+Alternatively you can watch the cluster operators to follow the installation process:
+
+```sh
+watch -n5 oc get clusteroperators
+```
+
+## Destroy the cluster
+
+```sh
+# Compute
+## Clean up instances
+oci compute instance terminate --force \
+  --instance-id $INSTANCE_ID_BOOTSTRAP
+
+oci compute-management instance-pool terminate --force \
+  --instance-pool-id $INSTANCE_POOL_ID_CMP \
+    --wait-for-state TERMINATED
+oci compute-management instance-configuration delete --force \
+  --instance-configuration-id $INSTANCE_CONFIG_ID_CMP
+
+oci compute-management instance-pool terminate --force \
+  --instance-pool-id $INSTANCE_POOL_ID_CPL \
+  --wait-for-state TERMINATED
+oci compute-management instance-configuration delete --force \
+  --instance-configuration-id $INSTANCE_CONFIG_ID_CPL
+
+## Custom image
+oci compute image delete --force --image-id ${IMAGE_ID}
+
+# IAM
+## Remove policy
+oci iam policy delete --force \
+  --policy-id $(oci iam policy list \
+    --compartment-id $COMPARTMENT_ID_OPENSHIFT \
+    --name $POLICY_NAME | jq -r .data[0].id) \
+  --wait-for-state DELETED
+
+## Remove dynamic group
+oci iam dynamic-group delete --force \
+  --dynamic-group-id $(oci iam dynamic-group list \
+    --name $DYNAMIC_GROUP_NAME | jq -r .data[0].id) \
+  --wait-for-state DELETED
+
+## Remove tag namespace and key
+oci iam tag-namespace retire --tag-namespace-id $TAG_NAMESPACE_ID
+oci iam tag-namespace cascade-delete \
+  --tag-namespace-id $TAG_NAMESPACE_ID \
+  --wait-for-state SUCCEEDED
+
+## Bucket
+for RES_ID in $(oci os preauth-request list   --bucket-name "$BUCKET_NAME" | jq -r .data[].id); do
+  echo "Deleting Preauth request $RES_ID"
+  oci os preauth-request delete --force \
+    --bucket-name "$BUCKET_NAME" \
+    --par-id "${RES_ID}";
+done
+oci os object delete --force \
+  --bucket-name "$BUCKET_NAME" \
+  --object-name "images/${IMAGE_NAME}"
+oci os object delete --force \
+  --bucket-name "$BUCKET_NAME" \
+  --object-name "bootstrap-${CLUSTER_NAME}.ign"
+oci os bucket delete --force \
+  --bucket-name "$BUCKET_NAME"
+
+# Load Balancer
+oci nlb network-load-balancer delete --force \
+  --network-load-balancer-id $NLB_ID \
+  --wait-for-state SUCCEEDED
+
+# Network and dependencies
+for RES_ID in $(oci network subnet list \
+  --compartment-id $COMPARTMENT_ID_OPENSHIFT \
+  --vcn-id $OCI_VCN_ID | jq -r .data[].id); do
+  echo "Deleting Subnet $RES_ID"
+  oci network subnet delete --force \
+    --subnet-id $RES_ID \
+    --wait-for-state TERMINATED;
+done
+
+for RES_ID in $(oci network nsg list \
+  --compartment-id $COMPARTMENT_ID_OPENSHIFT \
+  --vcn-id $OCI_VCN_ID | jq -r .data[].id); do
+  echo "Deleting NSG $RES_ID"
+  oci network nsg delete --force \
+    --nsg-id $RES_ID \
+    --wait-for-state TERMINATED;
+done
+
+for RES_ID in $(oci network security-list list \
+  --compartment-id $COMPARTMENT_ID_OPENSHIFT \
+  --vcn-id $OCI_VCN_ID \
+  | jq -r '.data[] | select(.["display-name"]  | startswith("Default") | not).id'); do
+  echo "Deleting SecList $RES_ID"
+  oci network security-list delete --force \
+    --security-list-id $RES_ID \
+    --wait-for-state TERMINATED;
+done
+
+oci network route-table delete --force \
+    --wait-for-state TERMINATED \
+    --rt-id $(oci network route-table list \
+      --compartment-id $COMPARTMENT_ID_OPENSHIFT \
+      --vcn-id $OCI_VCN_ID \
+      | jq -r '.data[] | select(.["display-name"] | endswith("rt-public")).id')
+
+oci network route-table delete --force \
+    --wait-for-state TERMINATED \
+    --rt-id $(oci network route-table list \
+      --compartment-id $COMPARTMENT_ID_OPENSHIFT \
+      --vcn-id $OCI_VCN_ID \
+      | jq -r '.data[] | select(.["display-name"] | endswith("rt-private")).id')
+
+for RES_ID in $(oci network nat-gateway list \
+  --compartment-id $COMPARTMENT_ID_OPENSHIFT \
+  --vcn-id $OCI_VCN_ID | jq -r .data[].id); do
+  echo "Deleting NATGW $RES_ID"
+  oci network nat-gateway delete --force \
+    --nat-gateway-id $RES_ID \
+    --wait-for-state TERMINATED;
+done
+
+for RES_ID in $(oci network internet-gateway list \
+  --compartment-id $COMPARTMENT_ID_OPENSHIFT \
+  --vcn-id $OCI_VCN_ID | jq -r .data[].id); do
+  echo "Deleting IGW $RES_ID"
+  oci network internet-gateway delete --force \
+    --ig-id $RES_ID \
+    --wait-for-state TERMINATED;
+done
+
+oci network vcn delete --force \
+  --vcn-id $OCI_VCN_ID \
+  --wait-for-state TERMINATED
+
+# Compartment
+oci iam compartment delete --force \
+  --compartment-id $COMPARTMENT_ID_OPENSHIFT \
+  --wait-for-state SUCCEEDED
+```
+
+## Summary
+
+> TODO
+
 ## Next
 
-TBD
+Congrats!
