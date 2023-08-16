@@ -412,19 +412,11 @@ systemd:
     contents: |
       [Unit]
       Description=Fetch kubelet provider id from Metadata
-      # Run afterburn service for collect info from metadata server
-      # see: https://coreos.github.io/afterburn/usage/attributes/
-      # Not required due to OCP 4.1 boot image does not contain afterburn service
-      # see: https://issues.redhat.com/browse/OCPBUGS-7559
-      Wants=afterburn.service
-      After=afterburn.service
       # Wait for NetworkManager to report it's online
       After=NetworkManager-wait-online.service
       # Run before kubelet
       Before=kubelet.service
       [Service]
-      # Mark afterburn environment file optional, due to it is possible that afterburn service was not executed
-      EnvironmentFile=-/run/metadata/afterburn
       ExecStart=/usr/local/bin/kubelet-providerid
       Type=oneshot
       [Install]

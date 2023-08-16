@@ -1055,13 +1055,9 @@ systemd:
     contents: |
       [Unit]
       Description=Fetch kubelet provider id from Metadata
-      Wants=afterburn.service
-      After=afterburn.service
       After=NetworkManager-wait-online.service
       Before=kubelet.service
       [Service]
-      # Mark afterburn environment file optional, due to it is possible that afterburn service was not executed
-      EnvironmentFile=-/run/metadata/afterburn
       ExecStart=/usr/local/bin/kubelet-providerid
       Type=oneshot
       [Install]
