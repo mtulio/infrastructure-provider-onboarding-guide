@@ -491,9 +491,11 @@ Requirements:
 - You uploaded the RHCOS image to the cloud image service
 - You reviewed the ["Minimum resource requirements for cluster installation"](https://docs.openshift.com/container-platform/4.13/installing/installing_platform_agnostic/installing-platform-agnostic.html#installation-minimum-resource-requirements_installing-platform-agnostic)
 
-### Bootstrap
+### Bootstrap node
 
 The bootstrap node is a temporary machine used only during the installation process.
+It is a temporary machine that runs a minimal Kubernetes configuration to deploy
+the OpenShift Container Platform control plane.
 
 The `bootstrap.ign` must be used to create the bootstrap node. Most of the cloud
 providers have size limits in the user data, so you must store the `bootstrap.ign`
