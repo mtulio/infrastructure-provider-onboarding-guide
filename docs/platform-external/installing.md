@@ -78,22 +78,6 @@ wget $(./openshift-install coreos print-stream-json | jq -r '.architectures["x86
 You must upload the downloaded image to your cloud provider image service and
 use it when creating virtual machines.
 
-### Setup the Provider Account
-
-<!-- > ToDo: Provide general instructions and best practices when preparing the account to install OCP
-
-- Use the least privileges
-- Segregate by containers (Resource Group, Compartments, or similar for cloud-specific) -->
-
-The account setup may vary based on the cloud provider and the architecture on which you are
-deploying OpenShift. Some providers segregate the resources by containers,
-resource groups, compartments, and accounts.
-
-The agnostic installations do not require OpenShift integration with the cloud provider,
-it will not require any additional cloud provider account. You must check the documentation
-for the components you are extending in OpenShift, for example, Cloud Controller Manager,
-CSI Driver, etc.
-
 ## Create Infrastructure resources
 
 Several types of infrastructure need to be created including compute nodes, storage, and networks.
