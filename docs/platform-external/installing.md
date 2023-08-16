@@ -11,7 +11,7 @@ to deploy an OpenShift cluster.
 There are other methods and tools than using `openshift-installer` to deploy
 provider-agnostic cluster, like Assisted Installer, which is not covered by this guide.
 
-To begging with agnostic installation for the platform external, the `install-config.yaml`
+To begin with agnostic installation for the platform external, the `install-config.yaml`
 configuration must be changed for the setting the platform type to `External`, then
 the providers' manifests must be placed into the install directory before creating
 the ignition files.
