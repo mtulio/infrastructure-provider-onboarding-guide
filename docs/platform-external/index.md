@@ -2,7 +2,7 @@
 
 The Platform External path allows providers to self-serve the integration of
 Kubernetes components in OpenShift/OKD without the need to modify any core payload
-and without the need for direct involvement of OpenShift engineering.
+and without the need for direct involvement of Red Hat engineering.
 
 What are external cloud providers in Kubernetes?
 
@@ -21,11 +21,7 @@ The external platform in OpenShift sets the `--cloud-provider` flag to `external
 (Kubelet and Kube Controller Manager) to signalize the use of external cloud providers,
 allowing partners to extend providers' components like Cloud Controller Manager to the OpenShift platform.
 
-This work is divided into phases, the initial version is available on OCP 4.14+ which allows
-providers to install OpenShift cluster supplying the cloud provider's Cloud Controller
-Manager (CCM) when the cluster is initialized.
-
-To know more about the feature, we encourage you to read the OpenShift Enhancement Proposal
+To learn more about the feature, we encourage you to read the OpenShift Enhancement Proposal
 ["Introduce new platform type `External` in the OpenShift specific Infrastructure resource"](https://github.com/openshift/enhancements/blob/master/enhancements/cloud-integration/infrastructure-external-platform-type.md).
 
 To begin learning about the process, we are providing the following pages to achieve your goal:
