@@ -8,11 +8,11 @@ approvers:
 - elmiko
 - patrickdillon
 reviewers:
-- JoelSpeed
 - RadekManak
 - damdo
-- elmiko
+- mdbooth
 - nrb
-- odvarkadaniel
 - racheljpg
-- vincepri
+- theobarberbany
+component: Cloud Compute
+subcomponent: Unknown
