@@ -152,3 +152,17 @@ which is exactly the residue `openshift.yaml` carries.
 
 The `compatibility` is used by installer to validate if the openshift-install binary, and release image used to create the cluster is compatible with the provider's installer payload for platform-external, this must be update by provider every time Cluster API provider binary is updated.
 
+## Continuos Test Payload Image
+
+Partner is responsible to continuous test the Payload image to ensure compatibility with OpenShift and openshift-install program.
+
+openshift-install program provides the validation methods you can integrate with your pipeline to ensure readiness:
+
+> TBD if `openshift-install external *` commands will be develired as a helper
+
+
+## Reference implementation
+
+- Partner helper reference implementation:
+  - "FOO" (AWS with CAPA)
+  - "BAR" (OCI with CAPOCI)

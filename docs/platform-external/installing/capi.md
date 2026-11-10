@@ -12,5 +12,7 @@ Provisioning an OpenShift cluster with platform type External using CAPI provide
 The shared responsability mode is described in this slide deck: https://htmlpreview.github.io/?https://raw.githubusercontent.com/mtulio/enhancements/refs/heads/platform-external-capi/enhancements/cloud-integration/install-external-platform-type-with-capi.html
 
 To get started, the following documentation are created to the integrator to help you building your own payload image:
-- [CAPI Payload Image](./capi-payload-integrator.md)
-- [Install OCP cluster on a reference provider (integrator helper)](./capi-ref-image-aws.md)
+
+- [CAPI Payload Image (Provider / Integrator only)](./capi-payload-integrator.md)
+- [Install OCP cluster on a reference provider: AWS (integrator helper)](./capi-ref-image-aws.md)
+- [Install OCP cluster on a reference provider: Oracle/OCI (integrator helper)](./capi-ref-image-aws.md)
