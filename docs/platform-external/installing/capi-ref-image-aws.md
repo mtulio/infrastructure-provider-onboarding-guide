@@ -248,31 +248,19 @@ error, before any cloud call.
     `resolve-api-int-url` unless something out of band creates it. The installer warns and
     continues rather than refusing, because out-of-band DNS is a real deployment.
 
-### 2.4 Create the cloud credentials Secret
+### 2.4 The cloud credentials Secret — nothing to do
 
-This is the one artifact that is not in the payload, and the exception is the design: a
-credential baked into an image would make the image customer-tied.
+**There is no step here any more.** The payload's `postProvision` hook creates the
+`aws-cloud-credentials` Secret itself, reading the same `AWS_SHARED_CREDENTIALS_FILE` the
+installer was run with. Export that variable, which you already have to do for the
+provider's controller, and the rest happens on its own.
 
-The payload renders the CCM Deployment itself from `${CCM_IMAGE}`, so only the Secret is
-staged here. Create it as an **extra manifest**, which the installer folds into
-`<install-dir>/manifests/`:
-
-> CHANGE-ME to bash style 
-
-```bash
-mkdir -p "${INSTALL_DIR}/external-install/extra-manifests"
-cat << EOF > "${INSTALL_DIR}/external-install/extra-manifests/99_external-01-ccm-credentials.yaml"
-apiVersion: v1
-kind: Secret
-metadata:
-  name: aws-cloud-credentials
-  namespace: openshift-cloud-controller-manager
-type: Opaque
-data:
-  credentials: $(cat ${AWS_SHARED_CREDENTIALS_FILE} | base64 -w0)
-EOF
-```
-
+This page used to ask you to write the Secret into
+`<install-dir>/external-install/extra-manifests/` by base64-encoding the credentials file.
+**Do not do that.** It puts a live cloud credential into the install directory, which is
+the directory you keep, archive and attach to a support case. The hook never writes the
+value anywhere: it pipes the file into `oc create secret --dry-run=client -o yaml | oc
+apply -f -` and logs only its length.
 
 !!! info "Why a Secret and not an instance profile"
 
@@ -284,6 +272,16 @@ EOF
 
     A partner running this for real may well prefer an instance profile, and can — the
     CCM Deployment falls back to the metadata service when this Secret is absent.
+
+!!! warning "The fallback is silent, and the error it produces points at the wrong thing"
+
+    If the Secret is missing, the AWS SDK does not fail at `/etc/aws/credentials`. It
+    falls through its credential chain to the instance metadata service, finds no
+    instance profile, and reports a **404 from IMDS**. That reads like "the machine needs
+    an instance profile" and it is not — it is the last link of the chain, not the cause.
+    The CCM then exits fatally rather than degrading, so the symptom is a
+    `CrashLoopBackOff` with nodes stuck `NotReady` behind the
+    `node.cloudprovider.kubernetes.io/uninitialized` taint.
 
 ## Section 3. Create manifests
 
@@ -380,36 +378,45 @@ expected rather than a stall.
     grep -c 'level=fatal' install.log
     ```
 
-## Section 5. Approve the compute node certificates
+## Section 5. Compute node certificates — approved by the payload
 
-Compute node CSRs are **not auto-approved** on `platform: external`. The install will
-otherwise complete with only the control-plane nodes registered.
-
-To view pending certifications:
-
-
-To approve certificates:
+**There is no manual step here any more.** The payload's `postProvision` hook approves the
+node certificates and waits for every expected node to become `Ready` before it returns.
+A run that previously needed `oc adm certificate approve` twice, a minute apart, now
+completes unattended.
 
 ```bash
 export KUBECONFIG="${PWD}/${INSTALL_DIR}/auth/kubeconfig"
-
-oc get csr --no-headers | awk '$NF=="Pending"{print $1}' | xargs -r oc adm certificate approve
-```
-
-Run it **twice**, a minute apart: each compute node submits a client CSR first and a
-serving CSR after it joins. On a two-worker cluster that is four approvals in total.
-
-```bash
 oc get nodes
+oc get csr --no-headers | awk '$NF=="Pending"' | wc -l    # expect 0
 ```
 
-All control-plane and compute nodes should reach `Ready`.
+All control-plane and compute nodes should be `Ready`, with no pending requests.
 
-!!! info "This gap is not created by CAPI"
+!!! info "What the hook approves, and why it is not `approve everything pending`"
 
-    Missing automatic CSR approval affects `platform: external` and `platform: none`
-    alike, and predates this work. It is tracked separately; a webhook that compares a CSR
-    against the provider's own node inventory is the likely shape of a fix.
+    A reference implementation that rubber-stamped every pending CSR would be teaching
+    partners to hand out node identities to anyone who can file a request. The hook
+    approves only the `kubernetes.io/kube-apiserver-client-kubelet` and
+    `kubernetes.io/kubelet-serving` signers, only from the expected requesters, and only
+    when the CSR's `system:node:<name>` subject matches an instance carrying this
+    cluster's ownership tag. Anything it cannot verify, it refuses and logs.
+
+!!! warning "This covers day 0 only, and the underlying gap is unchanged"
+
+    `cluster-machine-approver` is deployed and running on an External cluster and
+    approves nothing, because it resolves a CSR by looking the node up in the **Machine
+    API** and this platform has no Machine API Machines:
+
+    ```
+    csr-xxxxx: failed to find machine with InternalDNS matching ip-10-0-7-140, cannot approve
+    ```
+
+    The hook is a demonstration that the comparison is cheap and reliable, not a proposal
+    that hooks are where this belongs. It runs on the installer host and exits, so
+    certificate rotation, node replacement and scale-up after the install have nothing
+    approving them. The durable answer is an in-cluster controller; it affects
+    `platform: external` and `platform: none` alike and is tracked separately.
 
 ## Section 6. Review the installation
 
@@ -519,7 +526,14 @@ Two things here, however, *are* real evidence even on AWS:
 ## Known limitations
 
 - **`oc` is a runtime dependency** of image mode. Local-path mode has no such dependency.
-- **Compute CSRs are not auto-approved** (see [Section 5](#section-5-approve-the-compute-node-certificates)).
+- **Nothing in the cluster approves node certificates after the install.** The payload's
+  hook covers day 0 (see [Section 5](#section-5-compute-node-certificates-approved-by-the-payload));
+  rotation, replacement and scale-up afterwards have no approver.
+- **The compute count comes from the payload, not from `compute.replicas`.** The example
+  tree declares two worker `Machine` objects statically, so an `install-config.yaml`
+  asking for zero workers still gets two. Edit the payload's machine manifests to change
+  it. This decoupling is a property of day-0 Cluster API machines, not a defect of this
+  example, and it is why `oc get nodes` can disagree with your install-config.
 - **A tagged payload reference is traceable but not reproducible.** The install log and
   `metadata.json` record the resolved digest, so you can tell after the fact which image
   ran — but the install-config alone does not pin it. A disconnected or mirrored install
